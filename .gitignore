@@ -1,0 +1,20 @@
+# Environment files with sensitive API keys
+.env
+.env.local
+
+# Python cache & artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Temporary audio files and logs
+*.wav
+*.log
+*.err
+/tmp/alt_voice_input*
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride

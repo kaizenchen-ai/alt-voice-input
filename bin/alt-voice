@@ -1,0 +1,133 @@
+#!/bin/bash
+# Control script for Alt Voice Input Daemon
+
+SCRIPT_PATH="$HOME/.hermes/scripts/alt_voice_input.py"
+LOG_PATH="/tmp/alt_voice_input.log"
+ERR_PATH="/tmp/alt_voice_input.err"
+PYTHON_BIN="/opt/homebrew/bin/python3"
+
+get_pid() {
+    daemon_pids | head -n 1
+}
+
+start_daemon() {
+    PID=$(get_pid)
+    if [ -n "$PID" ]; then
+        echo "⚠️ Alt Voice Input is already running with PID: $PID"
+        return 0
+    fi
+    if [ ! -x "$PYTHON_BIN" ]; then
+        echo "❌ 找不到 Python 執行檔: $PYTHON_BIN"
+        return 1
+    fi
+    if [ ! -f "$SCRIPT_PATH" ]; then
+        echo "❌ 找不到主程式: $SCRIPT_PATH"
+        return 1
+    fi
+    echo "🚀 Starting Alt Voice Input Daemon..."
+    nohup "$PYTHON_BIN" -u "$SCRIPT_PATH" > "$LOG_PATH" 2> "$ERR_PATH" &
+    sleep 1
+    NEW_PID=$(get_pid)
+    if [ -n "$NEW_PID" ]; then
+        echo "✅ Alt Voice Input started successfully (PID: $NEW_PID)."
+        echo "👉 單按一下 Option (Alt) 開始錄音，再按一下 Option 結束並自動貼上！"
+    else
+        echo "❌ Failed to start. Error log:"
+        cat "$ERR_PATH"
+    fi
+}
+
+# Match this tool's current timestamped recordings and its legacy filename.
+# Restrict matches to ffmpeg AVFoundation capture owned by this user.
+recording_pids() {
+    pgrep -u "$(id -u)" -f '(^|/)ffmpeg[[:space:]].*-f[[:space:]]+avfoundation[[:space:]].*/tmp/alt_voice_input(_[0-9]+)?[.]wav([[:space:]]|$)' || true
+}
+
+daemon_pids() {
+    pgrep -u "$(id -u)" -f '(^|[[:space:]])([^[:space:]]*/)?alt_voice_input[.]py([[:space:]]|$)' || true
+}
+
+signal_matches() {
+    local sig="$1" finder="$2" pid
+    for pid in $("$finder"); do
+        kill -s "$sig" "$pid" 2>/dev/null || true
+    done
+}
+
+wait_for_matches() {
+    local finder="$1" attempts="$2" i
+    for ((i=0; i<attempts; i++)); do
+        [ -z "$("$finder")" ] && return 0
+        sleep 0.1
+    done
+    [ -z "$("$finder")" ]
+}
+
+stop_daemon() {
+    PID=$(get_pid)
+    if [ -z "$PID" ]; then
+        echo "ℹ️ Alt Voice Input 目前未在運行，無需停止。"
+        return 0
+    fi
+    echo "🛑 Stopping Alt Voice Input and cleaning up recording processes..."
+    signal_matches TERM daemon_pids
+    if ! wait_for_matches daemon_pids 60; then
+        signal_matches KILL daemon_pids
+        if ! wait_for_matches daemon_pids 20; then
+            echo "❌ Voice daemon is still running."
+            return 1
+        fi
+    fi
+
+    # Run even when the parent is already gone (including after SIGKILL).
+    signal_matches INT recording_pids
+    if ! wait_for_matches recording_pids 20; then
+        signal_matches TERM recording_pids
+        if ! wait_for_matches recording_pids 10; then
+            signal_matches KILL recording_pids
+        fi
+    fi
+    if ! wait_for_matches recording_pids 20; then
+        echo "❌ Recording processes are still running."
+        return 1
+    fi
+    echo "✅ Stopped; no Alt Voice recording processes remain."
+}
+
+status_daemon() {
+    PID=$(get_pid)
+    if [ -n "$PID" ]; then
+        MEM=$(ps -o rss= -p "$PID" | awk '{printf "%.1f MB", $1/1024}')
+        CPU=$(ps -o %cpu= -p "$PID" | awk '{print $1"%" }')
+        echo "🟢 Alt Voice Input 正在運行中"
+        echo "   PID: $PID | 記憶體佔用: $MEM | CPU: $CPU"
+        echo "--- 最近日誌 ---"
+        tail -n 6 "$LOG_PATH" 2>/dev/null
+    else
+        echo "🔴 Alt Voice Input 目前已停止"
+    fi
+}
+
+case "$1" in
+    start)
+        start_daemon
+        ;;
+    stop)
+        stop_daemon
+        ;;
+    restart)
+        stop_daemon || exit 1
+        sleep 1
+        start_daemon
+        ;;
+    status)
+        status_daemon
+        ;;
+    log)
+        tail -f "$LOG_PATH"
+        ;;
+    *)
+        echo "Usage: alt-voice {start|stop|restart|status|log}"
+        exit 1
+        ;;
+esac
