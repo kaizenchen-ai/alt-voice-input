@@ -276,8 +276,6 @@ class FloatingHUD:
         self.segment_idx = seg_idx
 
     def show_processing(self):
-        if self.hud_mode == "RECORDING":
-            return
         self.hud_mode = "PROCESSING"
         self.proc_start_time = time.time()
         self.anim_idx = 0
@@ -288,8 +286,6 @@ class FloatingHUD:
         self._start_animation()
 
     def show_success(self):
-        if self.hud_mode == "RECORDING":
-            return
         self.hud_mode = "SUCCESS"
         self._stop_animation()
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(0.3, 0.9, 0.45, 1.0))
@@ -300,8 +296,6 @@ class FloatingHUD:
         )
 
     def show_cancel(self, msg="⚠️ 未偵測到聲音"):
-        if self.hud_mode == "RECORDING":
-            return
         self.hud_mode = "CANCEL"
         self._stop_animation()
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.7, 0.3, 1.0))
@@ -312,8 +306,6 @@ class FloatingHUD:
         )
 
     def fadeOut_(self, timer):
-        if self.hud_mode == "RECORDING":
-            return
         AppKit.NSAnimationContext.beginGrouping()
         AppKit.NSAnimationContext.currentContext().setDuration_(0.3)
         self.window.animator().setAlphaValue_(0.0)
@@ -445,8 +437,13 @@ class AltVoiceInputManager:
                 was_solo = not self.other_key_pressed
                 self.alt_pressed = False
                 
-                if was_solo and 0.04 <= press_duration <= 0.75:
+                if was_solo and 0.02 <= press_duration <= 1.2:
+                    log(f"🔘 Option tapped ({press_duration:.2f}s). Toggling recording...")
                     self.toggle()
+                elif not was_solo:
+                    log("ℹ️ Option key combination detected, skipping dictation.")
+                else:
+                    log(f"ℹ️ Option key duration ({press_duration:.2f}s) ignored.")
 
     def toggle(self):
         with self.lock:
