@@ -193,6 +193,116 @@ def apply_vocabulary_post_processing(text):
             text = text.replace(wrong, right)
     return text
 
+SNAPSHOT_FILE = os.path.expanduser("~/.hermes/config/voice_history_snapshots.json")
+
+def load_history_snapshots():
+    if os.path.exists(SNAPSHOT_FILE):
+        try:
+            with open(SNAPSHOT_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+def append_history_snapshot(text):
+    if not text or not text.strip():
+        return
+    history = load_history_snapshots()
+    history.append({"text": text.strip(), "timestamp": time.time()})
+    if len(history) > 30:
+        history = history[-30:]
+    try:
+        with open(SNAPSHOT_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        log(f"Error saving history snapshot: {e}")
+
+def save_learned_vocabulary(new_pairs):
+    if not new_pairs:
+        return {}
+    try:
+        data = {"mappings": {}, "context_hints": []}
+        if os.path.exists(VOCAB_CONFIG_PATH):
+            with open(VOCAB_CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        
+        mappings = data.setdefault("mappings", {})
+        added = {}
+        for wrong, right in new_pairs.items():
+            wrong = str(wrong).strip().strip('"').strip("'")
+            right = str(right).strip().strip('"').strip("'")
+            if wrong and right and wrong != right:
+                if mappings.get(wrong) != right:
+                    mappings[wrong] = right
+                    added[wrong] = right
+
+        if added:
+            with open(VOCAB_CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            log(f"🧠 [Auto-Learned Vocabulary Persisted]: {added}")
+            for target_dir in ["/Users/chenkairen/Projects/alt-voice-input", "/Volumes/仁家Drive1T/06_Skills_Automation/alt_voice_input"]:
+                if os.path.isdir(target_dir):
+                    cfg = os.path.join(target_dir, "voice_vocabulary.json")
+                    try:
+                        with open(cfg, "w", encoding="utf-8") as f:
+                            json.dump(data, f, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+            return added
+    except Exception as e:
+        log(f"Error saving learned vocabulary: {e}")
+    return {}
+
+def extract_and_learn_vocabulary(orig_text, edited_text):
+    if not orig_text or not edited_text or orig_text.strip() == edited_text.strip():
+        return
+    def worker():
+        try:
+            prompt = f"""請對照以下兩段文字：
+【原始語音辨識輸出】：
+{orig_text}
+
+【使用者手動修正後的正確文字】：
+{edited_text}
+
+請精準萃取出使用者所做的「專用單詞、口語諧音、同音錯字」修正對照。
+規則：
+1. 必須將兩邊相同的周邊文字剝離，只萃取最小單位的核心詞彙（例如萃取 {{ "半百": "反白", "輪示": "潤飾", "HY": "AGY" }}）。
+2. 不要包含整句或相同的前後文。
+3. 嚴格輸出純 JSON 鍵值對（{{ "誤聽詞": "正確詞" }}），無 Markdown 標記，無其他說明。
+若無任何特定詞彙修正，請回傳 {{}}。"""
+
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.1, "topP": 0.95}
+            }
+            body = json.dumps(payload).encode("utf-8")
+            for key in API_KEYS:
+                for model in CANDIDATE_MODELS:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+                    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+                    try:
+                        with urllib.request.urlopen(req, timeout=4.0) as resp:
+                            res = json.loads(resp.read().decode("utf-8"))
+                            parts = res.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                            if parts:
+                                ans_text = parts[0].get("text", "").strip()
+                                if ans_text.startswith("```"):
+                                    ans_text = re.sub(r"^```(?:json)?\n?", "", ans_text)
+                                    ans_text = re.sub(r"\n?```$", "", ans_text)
+                                pairs = json.loads(ans_text)
+                                if isinstance(pairs, dict) and pairs:
+                                    added = save_learned_vocabulary(pairs)
+                                    if added:
+                                        log(f"🎉 成功自主學習新詞彙對照: {added}")
+                                return
+                    except Exception as e:
+                        continue
+        except Exception as e:
+            log(f"Auto-learn worker error: {e}")
+
+    threading.Thread(target=worker, name="auto-learn-vocab", daemon=True).start()
+
 def log(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
     formatted = f"[{ts}] {msg}"
@@ -321,7 +431,7 @@ class FloatingHUD:
         frame = screen.frame()
         self.w, self.h = 360, 52
         x = (frame.size.width - self.w) / 2
-        y = frame.size.height - self.h - 55  # Top-center of screen, right below menu bar!
+        y = 110  # Bottom-Center: right above the text input box & Dock, directly in line of sight!
 
         rect = Foundation.NSMakeRect(x, y, self.w, self.h)
         self.window = AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -745,6 +855,25 @@ class AltVoiceInputManager:
         log(f"📝 [Scheme A] Selected text ({len(new_clip)} chars): {new_clip[:40]}...")
         AppHelper.callAfter(self.hud.show_processing)
 
+        # 🧠 Auto-Learn: Check if user modified a previous recognition
+        try:
+            history = load_history_snapshots()
+            if history:
+                now = time.time()
+                for item in reversed(history):
+                    if now - item.get("timestamp", 0) < 900:  # Within 15 minutes
+                        orig = item.get("text", "")
+                        if orig and orig.strip() != new_clip.strip():
+                            s1 = set(orig)
+                            s2 = set(new_clip)
+                            overlap = len(s1 & s2) / max(1, len(s1 | s2))
+                            if overlap > 0.30:
+                                log(f"🔍 [Auto-Learn] Detected user modification compared to previous recognition! Overlap: {overlap:.2f}")
+                                extract_and_learn_vocabulary(orig, new_clip)
+                                break
+        except Exception as e:
+            log(f"Auto-learn inspection error: {e}")
+
         polished, err = self._call_gemini_text(new_clip)
         if not polished or err:
             log(f"❌ Text polishing failed: {err}")
@@ -1034,6 +1163,7 @@ class AltVoiceInputManager:
                 ascript = 'tell application "System Events" to keystroke "v" using command down'
                 subprocess.run(["osascript", "-e", ascript], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 time.sleep(0.08)  # Debounce synthetic key release
+                append_history_snapshot(text)
             finally:
                 self._is_pasting = False
 
