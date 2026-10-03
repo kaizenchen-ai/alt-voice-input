@@ -98,14 +98,78 @@ def load_env_keys():
 API_KEYS = load_env_keys()
 CANDIDATE_MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-flash-latest"]
 
-SYSTEM_PROMPT = """你是一位高階商務與專業技術的文字速記潤飾專家。
+VOCAB_CONFIG_PATH = os.path.expanduser("~/.hermes/config/voice_vocabulary.json")
+
+def load_vocabulary():
+    default_mappings = {
+        "HY": "AGY",
+        "hy": "AGY",
+        "A G Y": "AGY",
+        "Cloud": "Claude",
+        "cloudy": "Claude",
+        "Cloudy": "Claude",
+        "克勞德": "Claude",
+        "code x": "Codex",
+        "Code x": "Codex",
+        "科代克斯": "Codex",
+        "西西低": "CCD",
+        "CCT": "CCD",
+        "CCB": "CCD",
+        "荷米斯": "Hermes",
+        "愛馬仕": "Hermes",
+        "太普利斯": "Typeless",
+        "type list": "Typeless",
+        "人家Drive": "仁家Drive",
+        "任家Drive": "仁家Drive"
+    }
+    default_hints = [
+        "AGY（Google Antigravity 總調度核心，發音常被誤聽為 HY、A-G-Y）",
+        "Claude（Anthropic 旗艦模型，發音常被誤聽為 Cloud、cloudy、克勞德）",
+        "Codex（OpenAI 幕僚長代理人，發音常被誤聽為 Code X、科代克斯）",
+        "CCD（Claude Code CLI 專用簡稱，發音常被誤聽為 CCT、西西低）",
+        "Hermes（本地自動化調度代理人，發音常被誤聽為 愛馬仕、荷米斯）",
+        "Typeless（macOS 語音輸入工具，發音常被誤聽為 type list）",
+        "仁家Drive（外接硬碟標籤 仁家Drive1T）",
+        "TOEIC / 多益（英語檢定測驗）",
+        "NotebookLM（Google 筆記與多模態研究工具）",
+        "Alt / Option（Mac 修飾鍵）"
+    ]
+    if os.path.exists(VOCAB_CONFIG_PATH):
+        try:
+            with open(VOCAB_CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                mappings = data.get("mappings", default_mappings)
+                hints = data.get("context_hints", default_hints)
+                return mappings, hints
+        except Exception as e:
+            log(f"Error reading vocabulary config: {e}")
+    return default_mappings, default_hints
+
+def get_system_prompt():
+    _, hints = load_vocabulary()
+    hints_text = "\n".join(f"   - {h}" for h in hints)
+    return f"""你是一位高階商務與專業技術的文字速記潤飾專家。
+使用者是一位在 macOS 上進行 AI 代理人開發（AGY/Claude/Codex/Hermes）、程式編修與英語教學的專業工程師與教師。
 使用者剛才透過語音口述了一段話。你的唯一任務是將這段口語音訊轉換為流暢、高品質的繁體中文（台灣習慣）：
 1. 【嚴格清除口語贅字】：徹底刪除所有口頭禪與無意義發語詞（如：呃、額、那個、就是說、然後呢、對啊、嗯、啊等贅詞結巴）。
 2. 【智慧錯字修正常理】：根據上下文自動修正同音錯字（例如將「私藥的發包」修正為「次要的報表/排程」、「AZ」修正為「Alt」等合理用詞）。
-3. 【智慧項目條列排版】：若口述內容包含「多個並列事項、不同任務清單、執行步驟、或同類要點」，請主動排版為清晰條理的項目清單（依語意採用數字編號「1. 2. 3.」或項目符號「•」分行呈現），使其一目了然。
-4. 【結構通順與標點符號】：陳述性敘述請重組為自然分段、標點正確的標準繁體中文。
-5. 【輸出規範鐵則】：直接輸出修飾後的純文字內容，絕對嚴禁任何開場白、不要引號、不要任何「好的」、「這是整理後的內容」等廢話。
-6. 若音訊中只有空白、純雜音或無聲音，請僅回傳 [EMPTY]。"""
+3. 【使用者專屬詞庫與發音校正（最高優先級）】：
+   使用者在說話時常提及特定專有名詞，發音可能受口音影響或被語音模型聽偏。請務必結合使用者的 Mac 繁體中文工作場景，強制校正為正確專業詞彙：
+{hints_text}
+4. 【智慧項目條列排版】：若口述內容包含「多個並列事項、不同任務清單、執行步驟、或同類要點」，請主動排版為清晰條理的項目清單（依語意採用數字編號「1. 2. 3.」或項目符號「•」分行呈現），使其一目了然。
+5. 【結構通順與標點符號】：陳述性敘述請重組為自然分段、標點正確的標準繁體中文。
+6. 【輸出規範鐵則】：直接輸出修飾後的純文字內容，絕對嚴禁任何開場白、不要引號、不要任何「好的」、「這是整理後的內容」等廢話。
+7. 若音訊中只有空白、純雜音或無聲音，請僅回傳 [EMPTY]。"""
+
+def apply_vocabulary_post_processing(text):
+    mappings, _ = load_vocabulary()
+    for wrong, right in mappings.items():
+        if re.search(r'[a-zA-Z]', wrong):
+            pattern = r'\b' + re.escape(wrong) + r'\b'
+            text = re.sub(pattern, right, text, flags=re.IGNORECASE)
+        else:
+            text = text.replace(wrong, right)
+    return text
 
 def log(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -622,8 +686,9 @@ class AltVoiceInputManager:
                 return
 
             if text and text != "[EMPTY]" and text.strip():
-                log(f"✨ [AI Result Seq {seq}]: {text}")
-                self._enqueue_delivery(token, seq, text.strip())
+                final_text = apply_vocabulary_post_processing(text.strip())
+                log(f"✨ [AI Result Seq {seq}]: {final_text}")
+                self._enqueue_delivery(token, seq, final_text)
             elif api_error:
                 log(f"❌ [AI Error Seq {seq}]: {api_error}")
                 self._advance_empty_seq(token, seq)
@@ -683,7 +748,7 @@ class AltVoiceInputManager:
         payload = {
             "contents": [{
                 "parts": [
-                    {"text": SYSTEM_PROMPT},
+                    {"text": get_system_prompt()},
                     {"inline_data": {"mime_type": "audio/wav", "data": audio_b64}}
                 ]
             }],
