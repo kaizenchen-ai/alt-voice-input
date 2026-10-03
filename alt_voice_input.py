@@ -88,7 +88,12 @@ def load_env_keys():
                             continue
                         k, v = line.split("=", 1)
                         k, v = k.strip(), v.strip().strip('"').strip("'")
-                        if k in ("GOOGLE_API_KEY_FALLBACK_1", "GOOGLE_API_KEY", "GEMINI_API_KEY"):
+                        if k == "KEY_POOL":
+                            for p in v.split(","):
+                                p = p.strip()
+                                if p and p not in keys:
+                                    keys.append(p)
+                        elif k in ("GOOGLE_API_KEY_FALLBACK_1", "GOOGLE_API_KEY", "GEMINI_API_KEY"):
                             if v and v not in keys:
                                 keys.append(v)
             except Exception as e:
@@ -96,7 +101,23 @@ def load_env_keys():
     return keys
 
 API_KEYS = load_env_keys()
-CANDIDATE_MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-flash-latest"]
+# Priority: Flash Lite has 0 rate limit and <1s latency; followed by Flash Latest and Flash 3.5
+CANDIDATE_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-3.5-flash"]
+
+LOCK_FILE = "/tmp/alt_voice_input.lock"
+_lock_fd = None
+
+def acquire_single_instance_lock():
+    global _lock_fd
+    try:
+        import fcntl
+        _lock_fd = open(LOCK_FILE, "w")
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_fd.write(str(os.getpid()))
+        _lock_fd.flush()
+    except (IOError, BlockingIOError):
+        print("❌ Another instance of Alt Voice Input is already running. Exiting.", file=sys.stderr)
+        sys.exit(0)
 
 VOCAB_CONFIG_PATH = os.path.expanduser("~/.hermes/config/voice_vocabulary.json")
 
@@ -808,6 +829,7 @@ class AltVoiceInputManager:
 
 
 def main():
+    acquire_single_instance_lock()
     atexit.register(cleanup_ffmpeg)
     signal.signal(signal.SIGTERM, handle_exit_signal)
     signal.signal(signal.SIGINT, handle_exit_signal)
