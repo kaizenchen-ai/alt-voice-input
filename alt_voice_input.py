@@ -722,8 +722,7 @@ class AltVoiceInputManager:
                 self._is_pasting = False
 
         if new_clip == sentinel or not new_clip.strip():
-            # Nothing selected! Restore original clipboard
-            log("💡 [Scheme A] No text selected. Prompting user.")
+            # No text selected -> Seamlessly enter Scheme B (Voice Dictation with Live Audio Wave)
             with self.paste_lock:
                 self._is_pasting = True
                 try:
@@ -731,7 +730,11 @@ class AltVoiceInputManager:
                     p_res.communicate(input=old_clip.encode("utf-8"))
                 finally:
                     self._is_pasting = False
-            AppHelper.callAfter(self.hud.show_cancel, "💡 請先反白選取文字，再按 Option 潤飾")
+
+            log("🎤 [Scheme B] No text highlighted. Starting voice recording mode...")
+            with self.lock:
+                if not self.is_recording and not _shutdown.is_set():
+                    self.start_recording()
             return
 
         # Selected text captured!
