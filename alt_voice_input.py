@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
 """
-Alt Voice Input - Ultra-Pure Voice Dictation Engine
-Focus: Voice Input ➔ Audio Transcription ➔ AI Polishing ➔ Auto-Paste
+Alt Voice Input - Ultra-Pure Voice Dictation Engine (Robust & Safe Edition)
+Focus: Voice Input ➔ Audio Transcription ➔ AI Polishing ➔ Safe Single-Paste
 
-Key Features:
+Key Architectures & Safeguards:
 1. Pure Dictation Workflow:
    - Single trigger via Option (Alt) tap.
-   - Ultra-fast Gemini 3.5 Flash / Flash Latest multimodal polishing.
-   - Pristine Taiwan Traditional Chinese (removes fillers, fixes homophones, standardizes punctuation).
-2. P0 Sequential Order Assurance (保序隊列):
-   - Strict FIFO chunk delivery for auto-chunked long speech (150s slicing).
-   - Zero chance of Chunk 2 pasting before Chunk 1, even under network jitter.
-3. Escape to Cancel (Esc 秒級取消):
-   - Press Esc anytime to instantly cancel recording or drop in-flight AI processing.
-   - Zero residue, no accidental pasting, no wasted API resources.
-4. Ctrl + Cmd + V Instant Re-Paste (防呆重貼):
-   - Automatically caches the latest polished text.
-   - Hit Ctrl + Cmd + V to re-paste the latest transcript without speaking again.
-5. Zero-Ghosting HUD with Generation Guard:
-   - Native macOS Frosted Glass pill HUD with real-time timer and animated wave.
-   - Generation tokens prevent stale fade-out timers from hiding active recordings.
+   - Ultra-fast Gemini Flash multimodal polishing (removes fillers, fixes homophones, standardizes punctuation).
+   - Only listens to Option (Toggle) and Esc (Cancel). NO custom hotkey combinations.
+2. Anti-Recursion Paste Shield (_is_pasting Guard):
+   - Completely ignores any synthetic or hardware keyboard events while pasting is in progress.
+   - Prevents any runaway event-tap feedback loop.
+3. P0 Sequential Order Assurance (FIFO Chunk Delivery):
+   - Strict FIFO delivery for auto-chunked speech (150s segments).
+   - Chunk 1 is strictly guaranteed to paste before Chunk 2.
+4. Escape to Cancel (Esc 即時取消):
+   - Press Esc anytime to immediately cancel recording and invalidate any pending AI workers.
+5. Zero-Ghosting HUD with Generation Token Guard:
+   - Native macOS Frosted Glass pill HUD.
+   - Generation tokens prevent old timers from hiding or interfering with new sessions.
 """
 
 import atexit
@@ -311,19 +310,6 @@ class FloatingHUD:
             0.8, self, "fadeOut:", gen, False
         )
 
-    def show_toast(self, msg):
-        self.generation += 1
-        gen = self.generation
-        self.hud_mode = "TOAST"
-        self._stop_animation()
-        self.window.setAlphaValue_(1.0)
-        self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(0.35, 0.75, 1.0, 1.0))
-        self.label.setStringValue_(msg)
-        self.window.orderFrontRegardless()
-        AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            1.0, self, "fadeOut:", gen, False
-        )
-
     def fadeOut_(self, timer):
         timer_gen = timer.userInfo()
         if timer_gen != self.generation:
@@ -396,15 +382,15 @@ class AltVoiceInputManager:
         self.delivery_lock = threading.Lock()
         self.active_tasks = 0
 
-        # Caching for instant re-paste (Ctrl + Cmd + V)
-        self.last_transcript = ""
+        # Anti-Recursion Shield (Blocks keyboard events during programmatic paste)
+        self._is_pasting = False
+        self.paste_lock = threading.Lock()
 
-        # Key state tracking
+        # Key state tracking (Option and Esc ONLY)
         self.alt_pressed = False
         self.alt_press_time = 0
         self.other_key_pressed = False
-        self.ctrl_pressed = False
-        self.cmd_pressed = False
+        self.last_toggle_time = 0
 
         # Background watchdog for auto-chunking
         threading.Thread(target=self._auto_chunk_watchdog, daemon=True).start()
@@ -462,12 +448,19 @@ class AltVoiceInputManager:
             ).start()
 
     def on_press(self, key):
-        # 1. Track Modifiers
-        if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
-            self.ctrl_pressed = True
-        elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
-            self.cmd_pressed = True
-        elif key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
+        # Anti-recursion shield: Ignore any events while pasting!
+        if self._is_pasting:
+            return
+
+        # Esc Key: Instant Cancel
+        if key == keyboard.Key.esc:
+            if self.is_recording or self.active_tasks > 0:
+                log("🛑 Esc pressed. Cancelling active voice session...")
+                self.cancel_session()
+                return
+
+        # Option Key tracking
+        if key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
             if not self.alt_pressed:
                 self.alt_pressed = True
                 self.alt_press_time = time.time()
@@ -476,31 +469,12 @@ class AltVoiceInputManager:
             if self.alt_pressed:
                 self.other_key_pressed = True
 
-        # 2. ESC Cancel (Immediate cancel during recording or processing)
-        if key == keyboard.Key.esc:
-            if self.is_recording or self.active_tasks > 0:
-                log("🛑 Esc pressed. Cancelling active voice session...")
-                self.cancel_session()
-                return
-
-        # 3. Ctrl + Cmd + V Instant Re-Paste
-        is_v = False
-        if hasattr(key, 'char') and key.char in ('v', 'V', '\x16'):
-            is_v = True
-        elif getattr(key, 'vk', None) == 9:
-            is_v = True
-
-        if is_v and self.ctrl_pressed and self.cmd_pressed:
-            log("📋 Ctrl + Cmd + V detected. Triggering instant re-paste...")
-            self.re_paste_last()
+    def on_release(self, key):
+        # Anti-recursion shield: Ignore any events while pasting!
+        if self._is_pasting:
             return
 
-    def on_release(self, key):
-        if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
-            self.ctrl_pressed = False
-        elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
-            self.cmd_pressed = False
-        elif key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
+        if key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
             if self.alt_pressed:
                 press_duration = time.time() - self.alt_press_time
                 was_solo = not self.other_key_pressed
@@ -508,6 +482,11 @@ class AltVoiceInputManager:
                 
                 # Tap detection: single Option tap without other keys held
                 if was_solo and 0.02 <= press_duration <= 1.2:
+                    now = time.time()
+                    if now - self.last_toggle_time < 0.35:
+                        log("⚠️ Toggle debounced (too fast).")
+                        return
+                    self.last_toggle_time = now
                     log(f"🔘 Option tapped ({press_duration:.2f}s). Toggling recording...")
                     self.toggle()
                 elif not was_solo:
@@ -543,19 +522,6 @@ class AltVoiceInputManager:
         play_sound(SOUND_CANCEL)
         AppHelper.callAfter(self.hud.show_cancel, "🛑 語音輸入已取消")
         log("Session cancelled cleanly by user.")
-
-    def re_paste_last(self):
-        """Instantly pastes the most recently polished text without making any network call."""
-        if not self.last_transcript:
-            log("No cached transcript available for re-paste.")
-            AppHelper.callAfter(self.hud.show_cancel, "⚠️ 尚無可重貼的文字紀錄")
-            play_sound(SOUND_CANCEL)
-            return
-
-        log(f"Re-pasting cached text ({len(self.last_transcript)} chars)...")
-        self._paste_text(self.last_transcript)
-        play_sound(SOUND_SUCCESS)
-        AppHelper.callAfter(self.hud.show_toast, "📋 已重新貼上！")
 
     def toggle(self):
         with self.lock:
@@ -706,7 +672,6 @@ class AltVoiceInputManager:
             text = self.pending_results.pop(self.next_deliver_seq)
             log(f"📦 [Sequential Deliver Seq {self.next_deliver_seq}]: {text}")
             self._paste_text(text)
-            self.last_transcript = text
             self.next_deliver_seq += 1
 
             if not self.is_recording and not self.pending_results:
@@ -762,11 +727,18 @@ class AltVoiceInputManager:
         return None, (last_error or "未知錯誤")
 
     def _paste_text(self, text):
-        p = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
-        p.communicate(input=text.encode("utf-8"))
-        time.sleep(0.05)
-        ascript = 'tell application "System Events" to keystroke "v" using command down'
-        subprocess.run(["osascript", "-e", ascript], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        """Copies text to clipboard and issues a single Command+V with strict anti-recursion shielding."""
+        with self.paste_lock:
+            try:
+                self._is_pasting = True
+                p = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+                p.communicate(input=text.encode("utf-8"))
+                time.sleep(0.04)
+                ascript = 'tell application "System Events" to keystroke "v" using command down'
+                subprocess.run(["osascript", "-e", ascript], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(0.08)  # Debounce synthetic key release
+            finally:
+                self._is_pasting = False
 
 
 def main():
@@ -775,7 +747,7 @@ def main():
     signal.signal(signal.SIGINT, handle_exit_signal)
     listener = None
     try:
-        log("=== Starting Alt Voice Input (Ultra-Pure Dictation Engine) ===")
+        log("=== Starting Alt Voice Input (Safe Pure Dictation Engine) ===")
         if not os.path.exists(FFMPEG_BIN):
             log(f"❌ 致命錯誤: 找不到 ffmpeg ({FFMPEG_BIN})，請先安裝: brew install ffmpeg")
             sys.exit(1)
@@ -787,7 +759,7 @@ def main():
             return
         listener = keyboard.Listener(on_press=manager.on_press, on_release=manager.on_release)
         listener.start()
-        log("Listening for Option (Dictate), Esc (Cancel), and Ctrl+Cmd+V (Re-paste). Running loop...")
+        log("Listening for Option (Dictate) and Esc (Cancel). Running loop...")
 
         def signal_heartbeat():
             if not _shutdown.is_set():
