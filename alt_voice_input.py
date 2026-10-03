@@ -685,10 +685,80 @@ class AltVoiceInputManager:
         with self.lock:
             if _shutdown.is_set():
                 return
-            if not self.is_recording:
-                self.start_recording()
-            else:
+            if self.is_recording:
                 self.stop_recording_and_process()
+                return
+
+        # Scheme A: Polish selected text with Gemini Flash-Lite
+        threading.Thread(target=self._polish_selection_worker, daemon=True).start()
+
+    def _polish_selection_worker(self):
+        with self.paste_lock:
+            self._is_pasting = True
+            try:
+                # 1. Read current clipboard
+                p_old = subprocess.Popen(["pbpaste"], stdout=subprocess.PIPE)
+                old_clip, _ = p_old.communicate()
+                old_clip = old_clip.decode("utf-8", errors="ignore")
+
+                # 2. Put unique sentinel
+                sentinel = f"__SENTINEL_{time.time()}__"
+                p_set = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+                p_set.communicate(input=sentinel.encode("utf-8"))
+                time.sleep(0.03)
+
+                # 3. Simulate Cmd+C to copy selected text
+                subprocess.run(
+                    ["osascript", "-e", 'tell application "System Events" to keystroke "c" using command down'],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                )
+                time.sleep(0.10)
+
+                # 4. Read copied text
+                p_new = subprocess.Popen(["pbpaste"], stdout=subprocess.PIPE)
+                new_clip, _ = p_new.communicate()
+                new_clip = new_clip.decode("utf-8", errors="ignore")
+            finally:
+                self._is_pasting = False
+
+        if new_clip == sentinel or not new_clip.strip():
+            # Nothing selected! Restore original clipboard
+            log("💡 [Scheme A] No text selected. Prompting user.")
+            with self.paste_lock:
+                self._is_pasting = True
+                try:
+                    p_res = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+                    p_res.communicate(input=old_clip.encode("utf-8"))
+                finally:
+                    self._is_pasting = False
+            AppHelper.callAfter(self.hud.show_cancel, "💡 請先反白選取文字，再按 Option 潤飾")
+            return
+
+        # Selected text captured!
+        log(f"📝 [Scheme A] Selected text ({len(new_clip)} chars): {new_clip[:40]}...")
+        AppHelper.callAfter(self.hud.show_processing)
+
+        polished, err = self._call_gemini_text(new_clip)
+        if not polished or err:
+            log(f"❌ Text polishing failed: {err}")
+            play_sound(SOUND_CANCEL)
+            AppHelper.callAfter(self.hud.show_cancel, "❌ 潤飾失敗，請重試")
+            with self.paste_lock:
+                self._is_pasting = True
+                try:
+                    p_res = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+                    p_res.communicate(input=new_clip.encode("utf-8"))
+                finally:
+                    self._is_pasting = False
+            return
+
+        final_text = apply_vocabulary_post_processing(polished)
+        log(f"✨ [Scheme A Result]:\n{final_text}")
+
+        # Paste back to replace selection
+        self._paste_text(final_text)
+        play_sound(SOUND_SUCCESS)
+        AppHelper.callAfter(self.hud.show_success, "✅ 潤飾完成，已自動替換！")
 
     def start_recording(self):
         self.session_token += 1
@@ -895,6 +965,48 @@ class AltVoiceInputManager:
                     log(f"Gemini API {model} failed: {e}")
                     continue
         return None, (last_error or "未知錯誤")
+
+    def _call_gemini_text(self, raw_text):
+        sys_prompt = get_system_prompt()
+        prompt = (
+            f"{sys_prompt}\n\n"
+            f"使用者透過鍵盤反白選取的待潤飾草稿如下：\n"
+            f"```text\n{raw_text}\n```\n"
+            "請直接輸出潤飾排版後的繁體中文結果："
+        )
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }],
+            "generationConfig": {
+                "temperature": 0.2,
+                "topP": 0.95
+            }
+        }
+        body = json.dumps(payload).encode("utf-8")
+
+        last_error = None
+        for key in API_KEYS:
+            for model in CANDIDATE_MODELS:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+                timeout = 5.0
+                req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+                try:
+                    t0 = time.time()
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        res = json.loads(resp.read().decode("utf-8"))
+                        dt = time.time() - t0
+                        candidate = res.get("candidates", [{}])[0]
+                        parts = candidate.get("content", {}).get("parts", [])
+                        if parts:
+                            ans = parts[0].get("text", "").strip()
+                            log(f"Gemini Text API ({model}) returned in {dt:.2f}s")
+                            return ans, None
+                        return "", None
+                except Exception as e:
+                    last_error = str(e)
+                    continue
+        return None, (last_error or "連線失敗")
 
     def _paste_text(self, text):
         """Copies text to clipboard and issues a single Command+V with strict anti-recursion shielding."""
