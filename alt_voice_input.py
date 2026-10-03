@@ -319,9 +319,9 @@ class FloatingHUD:
     def __init__(self):
         screen = AppKit.NSScreen.mainScreen()
         frame = screen.frame()
-        self.w, self.h = 340, 52
+        self.w, self.h = 360, 52
         x = (frame.size.width - self.w) / 2
-        y = 75
+        y = frame.size.height - self.h - 55  # Top-center of screen, right below menu bar!
 
         rect = Foundation.NSMakeRect(x, y, self.w, self.h)
         self.window = AppKit.NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -330,7 +330,11 @@ class FloatingHUD:
             AppKit.NSBackingStoreBuffered,
             False
         )
-        self.window.setLevel_(AppKit.NSStatusWindowLevel + 20)
+        self.window.setLevel_(AppKit.NSStatusWindowLevel + 50)
+        self.window.setCollectionBehavior_(
+            AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces |
+            AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary
+        )
         self.window.setOpaque_(False)
         self.window.setBackgroundColor_(AppKit.NSColor.clearColor())
         self.window.setIgnoresMouseEvents_(True)
@@ -863,8 +867,16 @@ class AltVoiceInputManager:
                 return
 
             if text and text != "[EMPTY]" and text.strip():
-                final_text = apply_vocabulary_post_processing(text.strip())
-                log(f"✨ [AI Result Seq {seq}]: {final_text}")
+                # Pipeline through text refiner for perfect bulleting & filler removal!
+                raw_stt = text.strip()
+                try:
+                    polished_text, p_err = self._call_gemini_text(raw_stt)
+                    if polished_text and not p_err:
+                        raw_stt = polished_text
+                except Exception as e:
+                    log(f"Secondary text polish fallback: {e}")
+                final_text = apply_vocabulary_post_processing(raw_stt)
+                log(f"✨ [AI Result Seq {seq}]:\n{final_text}")
                 self._enqueue_delivery(token, seq, final_text)
             elif api_error:
                 log(f"❌ [AI Error Seq {seq}]: {api_error}")
