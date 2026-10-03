@@ -29,6 +29,7 @@ import time
 import json
 import base64
 import signal
+import shutil
 import threading
 import subprocess
 import urllib.request
@@ -208,6 +209,16 @@ def play_sound(sound_file):
     except Exception as e:
         log(f"Sound play error: {e}")
 
+def get_current_system_input_name():
+    cmd = shutil.which("SwitchAudioSource") or "/opt/homebrew/bin/SwitchAudioSource"
+    try:
+        res = subprocess.run([cmd, "-c", "-t", "input"], capture_output=True, text=True, timeout=2)
+        if res.returncode == 0:
+            return res.stdout.strip()
+    except Exception:
+        pass
+    return None
+
 def get_audio_device_index():
     try:
         proc = spawn_ffmpeg(
@@ -228,12 +239,25 @@ def get_audio_device_index():
                 if m:
                     devices.append((int(m.group(1)), m.group(2).strip()))
         
-        for idx, name in devices:
+        # 1. Prioritize macOS system default input device
+        sys_def = get_current_system_input_name()
+        if sys_def:
+            for idx, name in devices:
+                if sys_def.lower() in name.lower() or name.lower() in sys_def.lower():
+                    log(f"🎤 Matched macOS default input device: [{idx}] {name}")
+                    return idx
+
+        # 2. Filter out virtual audio loopback drivers
+        non_virtual = [d for d in devices if not any(v in d[1].lower() for v in ["blackhole", "loopback", "soundflower", "multi-output"])]
+
+        for idx, name in non_virtual:
             if "外接" in name or "External" in name:
                 return idx
-        for idx, name in devices:
+        for idx, name in non_virtual:
             if "麥克風" in name or "Mic" in name:
                 return idx
+        if non_virtual:
+            return non_virtual[0][0]
         if devices:
             return devices[0][0]
     except Exception as e:
@@ -338,11 +362,21 @@ class FloatingHUD:
         self.anim_idx = 0
         self.hud_mode = "IDLE"
         self.generation = 0  # Guard token against stale fade-out timers
+        self.current_rms = 0.0  # Real-time microphone audio amplitude
         
         # Timing states
         self.record_start_time = 0
         self.segment_idx = 1
         self.proc_start_time = 0
+
+    def rms_to_wave(self, rms):
+        # Maps microphone RMS amplitude into a lively 5-bar symmetric visualizer
+        norm = min(1.0, max(0.0, (rms - 200) / 3800.0))
+        bar_chars = [' ', ' ', '▂', '▃', '▄', '▅', '▆', '▇', '█']
+        c = bar_chars[min(8, int(norm * 8))]
+        m = bar_chars[min(8, int(norm * 6))]
+        o = bar_chars[min(8, int(norm * 4))]
+        return f"{o}{m}{c}{m}{o}"
 
     def show_recording(self, seg_idx=1):
         self.generation += 1
@@ -350,6 +384,7 @@ class FloatingHUD:
         self.record_start_time = time.time()
         self.segment_idx = seg_idx
         self.anim_idx = 0
+        self.current_rms = 0.0
         self.window.setAlphaValue_(1.0)
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.35, 0.35, 1.0))
         self._update_text()
@@ -364,6 +399,7 @@ class FloatingHUD:
         self.hud_mode = "PROCESSING"
         self.proc_start_time = time.time()
         self.anim_idx = 0
+        self.current_rms = 0.0
         self.window.setAlphaValue_(1.0)
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(0.4, 0.8, 1.0, 1.0))
         self._update_text()
@@ -374,6 +410,7 @@ class FloatingHUD:
         self.generation += 1
         gen = self.generation
         self.hud_mode = "SUCCESS"
+        self.current_rms = 0.0
         self._stop_animation()
         self.window.setAlphaValue_(1.0)
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(0.3, 0.9, 0.45, 1.0))
@@ -387,6 +424,7 @@ class FloatingHUD:
         self.generation += 1
         gen = self.generation
         self.hud_mode = "CANCEL"
+        self.current_rms = 0.0
         self._stop_animation()
         self.window.setAlphaValue_(1.0)
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.7, 0.3, 1.0))
@@ -420,7 +458,7 @@ class FloatingHUD:
     def _start_animation(self):
         self._stop_animation()
         self.anim_timer = AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            0.1, self, "timerTick:", None, True
+            0.06, self, "timerTick:", None, True
         )
 
     def _stop_animation(self):
@@ -436,11 +474,11 @@ class FloatingHUD:
         if self.hud_mode == "RECORDING":
             elapsed = time.time() - self.record_start_time
             mins, secs = divmod(int(elapsed), 60)
-            wave = WAVE_FRAMES[self.anim_idx % len(WAVE_FRAMES)]
+            wave = self.rms_to_wave(self.current_rms)
             if self.segment_idx > 1:
-                self.label.setStringValue_(f"🔴 {mins:02d}:{secs:02d} 聆聽中 [第{self.segment_idx}段] {wave}")
+                self.label.setStringValue_(f"🔴 {mins:02d}:{secs:02d} 聆聽中 [第{self.segment_idx}段] [{wave}]")
             else:
-                self.label.setStringValue_(f"🔴 {mins:02d}:{secs:02d} 正在聆聽... {wave}")
+                self.label.setStringValue_(f"🔴 {mins:02d}:{secs:02d} 正在聆聽... [{wave}]")
         elif self.hud_mode == "PROCESSING":
             proc_dt = time.time() - self.proc_start_time
             spin = SPINNER_FRAMES[self.anim_idx % len(SPINNER_FRAMES)]
@@ -496,6 +534,7 @@ class AltVoiceInputManager:
             old_file = self.current_recording_path
             old_proc = self.ffmpeg_proc
             old_seq = self.segment_idx
+            old_capture_th = getattr(self, 'capture_thread', None)
             current_token = self.session_token
             
             # Launch the next segment before stopping the previous one
@@ -508,10 +547,17 @@ class AltVoiceInputManager:
                 "-i", f":{self.device_idx}",
                 "-ar", "16000",
                 "-ac", "1",
-                new_file
+                "-f", "s16le",
+                "pipe:1"
             ]
             try:
-                self.ffmpeg_proc = spawn_ffmpeg(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.ffmpeg_proc = spawn_ffmpeg(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                self.capture_thread = threading.Thread(
+                    target=self._capture_worker,
+                    args=(self.ffmpeg_proc, new_file, current_token),
+                    daemon=True
+                )
+                self.capture_thread.start()
             except Exception as e:
                 log(f"Failed to spawn rotated ffmpeg: {e}")
                 return
@@ -521,6 +567,8 @@ class AltVoiceInputManager:
             self.current_recording_path = new_file
             log(f"🔄 [Auto Chunk] Reached {seg_elapsed:.1f}s. Rotating to segment {self.segment_idx}...")
             stop_ffmpeg(old_proc)
+            if old_capture_th and old_capture_th.is_alive():
+                old_capture_th.join(timeout=1.0)
 
             # Update HUD to reflect new segment
             AppHelper.callAfter(self.hud.update_recording_segment, self.segment_idx)
@@ -532,6 +580,30 @@ class AltVoiceInputManager:
                 args=(old_file, seg_elapsed, True, current_token, old_seq),
                 daemon=True
             ).start()
+
+    def _capture_worker(self, proc, audio_file, token):
+        """Streams raw PCM from ffmpeg stdout, writes to WAV file, and calculates real-time RMS."""
+        import wave, numpy as np
+        try:
+            w = wave.open(audio_file, "wb")
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+
+            while self.is_recording and token == self.session_token and not _shutdown.is_set():
+                data = proc.stdout.read(1600)  # 50ms chunk (800 samples * 2 bytes)
+                if not data:
+                    break
+                w.writeframes(data)
+                arr = np.frombuffer(data, dtype=np.int16).astype(np.float32)
+                rms = float(np.sqrt(np.mean(arr**2)))
+                self.hud.current_rms = rms
+
+            w.close()
+        except Exception as e:
+            log(f"Capture worker error: {e}")
+        finally:
+            self.hud.current_rms = 0.0
 
     def on_press(self, key):
         # Anti-recursion shield: Ignore any events while pasting!
@@ -624,6 +696,7 @@ class AltVoiceInputManager:
         self.record_total_start = time.time()
         self.seg_start_time = time.time()
         self.segment_idx = 1
+        self.device_idx = get_audio_device_index()
 
         with self.delivery_lock:
             self.pending_results.clear()
@@ -644,10 +717,17 @@ class AltVoiceInputManager:
             "-i", f":{self.device_idx}",
             "-ar", "16000",
             "-ac", "1",
-            audio_file
+            "-f", "s16le",
+            "pipe:1"
         ]
         try:
-            self.ffmpeg_proc = spawn_ffmpeg(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.ffmpeg_proc = spawn_ffmpeg(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            self.capture_thread = threading.Thread(
+                target=self._capture_worker,
+                args=(self.ffmpeg_proc, audio_file, self.session_token),
+                daemon=True
+            )
+            self.capture_thread.start()
         except Exception as e:
             log(f"Failed to start ffmpeg: {e}")
             self.is_recording = False
@@ -661,12 +741,15 @@ class AltVoiceInputManager:
         audio_file = self.current_recording_path
         current_token = self.session_token
         current_seq = self.segment_idx
+        capture_th = getattr(self, 'capture_thread', None)
         self.ffmpeg_proc = None
 
         log(f"⏹️ [Stop Recording] Segment {current_seq}: {seg_elapsed:.2f}s, Total: {total_elapsed:.2f}s. Processing...")
         play_sound(SOUND_STOP)
 
         stop_ffmpeg(proc)
+        if capture_th and capture_th.is_alive():
+            capture_th.join(timeout=1.0)
 
         self.active_tasks += 1
         AppHelper.callAfter(self.hud.show_processing)
