@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """
-Alt Voice Input - Continuous Audio Relay with Live HUD Timers & Auto-Chunking
-Key Highlights:
-1. Live Duration Timers on Floating HUD:
-   - Recording: Shows exact elapsed time: "🔴 01:23 正在聆聽...  ▂▃"
-   - Processing: Shows live inference timer: "✨ AI 智慧潤飾中 (1.8s) ⠋"
-2. Auto-Chunking Protection (自動分段保護機制):
-   - Automatically commits and rotates audio every 150s (2.5 mins) with zero audio gap!
-   - Polishes and auto-pastes long speech segment by segment, so nothing is ever lost.
-3. Multi-Task & Instant Continuation:
-   - Tapping Option during processing instantly starts a new recording.
-   - Finished tasks paste safely via sequential lock without interrupting active recording.
-4. Flagship Gemini 3.5 Flash:
-   - ~3.3s response time, pristine Taiwan Traditional Chinese, complete removal of filler words.
+Alt Voice Input - Ultra-Pure Voice Dictation Engine
+Focus: Voice Input ➔ Audio Transcription ➔ AI Polishing ➔ Auto-Paste
+
+Key Features:
+1. Pure Dictation Workflow:
+   - Single trigger via Option (Alt) tap.
+   - Ultra-fast Gemini 3.5 Flash / Flash Latest multimodal polishing.
+   - Pristine Taiwan Traditional Chinese (removes fillers, fixes homophones, standardizes punctuation).
+2. P0 Sequential Order Assurance (保序隊列):
+   - Strict FIFO chunk delivery for auto-chunked long speech (150s slicing).
+   - Zero chance of Chunk 2 pasting before Chunk 1, even under network jitter.
+3. Escape to Cancel (Esc 秒級取消):
+   - Press Esc anytime to instantly cancel recording or drop in-flight AI processing.
+   - Zero residue, no accidental pasting, no wasted API resources.
+4. Ctrl + Cmd + V Instant Re-Paste (防呆重貼):
+   - Automatically caches the latest polished text.
+   - Hit Ctrl + Cmd + V to re-paste the latest transcript without speaking again.
+5. Zero-Ghosting HUD with Generation Guard:
+   - Native macOS Frosted Glass pill HUD with real-time timer and animated wave.
+   - Generation tokens prevent stale fade-out timers from hiding active recordings.
 """
 
 import atexit
@@ -62,13 +69,11 @@ WAVE_FRAMES = [" ▂▃", "▂▃▄", "▃▄▅", "▄▅▆", "▅▆▇", "�
 # API Keys & Models
 def load_env_keys():
     keys = []
-    # 1. Check environment variables
     for env_var in ["GOOGLE_API_KEY_FALLBACK_1", "GOOGLE_API_KEY", "GEMINI_API_KEY"]:
         val = os.environ.get(env_var, "").strip()
         if val and val not in keys:
             keys.append(val)
 
-    # 2. Check candidate .env files
     candidate_envs = [
         os.path.expanduser("~/.hermes/.env"),
         os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
@@ -155,7 +160,6 @@ _ffmpeg_lock = threading.RLock()
 _ffmpeg_children = set()
 _shutdown = threading.Event()
 
-
 def spawn_ffmpeg(cmd, **kwargs):
     with _ffmpeg_lock:
         if _shutdown.is_set():
@@ -164,14 +168,11 @@ def spawn_ffmpeg(cmd, **kwargs):
         _ffmpeg_children.add(proc)
         return proc
 
-
 def stop_ffmpeg(proc):
     if proc is None:
         return
-    # Serialize wait() and cleanup against rotation and new recordings.
     with _ffmpeg_lock:
-        for sig, timeout in ((signal.SIGINT, 1.5), (signal.SIGTERM, 1.0),
-                             (signal.SIGKILL, None)):
+        for sig, timeout in ((signal.SIGINT, 1.5), (signal.SIGTERM, 1.0), (signal.SIGKILL, None)):
             if proc.poll() is not None:
                 break
             try:
@@ -186,17 +187,13 @@ def stop_ffmpeg(proc):
         proc.wait()
         _ffmpeg_children.discard(proc)
 
-
 def cleanup_ffmpeg():
     _shutdown.set()
     with _ffmpeg_lock:
         for proc in tuple(_ffmpeg_children):
             stop_ffmpeg(proc)
 
-
 def handle_exit_signal(signum, frame):
-    # Do not interrupt Popen between creating and registering its child.
-    # A separate thread also avoids deadlocking on a worker's lifecycle lock.
     if _shutdown.is_set():
         return
     _shutdown.set()
@@ -209,7 +206,7 @@ def handle_exit_signal(signum, frame):
 
 
 class FloatingHUD:
-    """Native macOS Frosted Glass Pill HUD with Live Timers"""
+    """Native macOS Frosted Glass Pill HUD with Live Timers & Generation Guard"""
     def __init__(self):
         screen = AppKit.NSScreen.mainScreen()
         frame = screen.frame()
@@ -255,6 +252,7 @@ class FloatingHUD:
         self.anim_timer = None
         self.anim_idx = 0
         self.hud_mode = "IDLE"
+        self.generation = 0  # Guard token against stale fade-out timers
         
         # Timing states
         self.record_start_time = 0
@@ -262,6 +260,7 @@ class FloatingHUD:
         self.proc_start_time = 0
 
     def show_recording(self, seg_idx=1):
+        self.generation += 1
         self.hud_mode = "RECORDING"
         self.record_start_time = time.time()
         self.segment_idx = seg_idx
@@ -276,6 +275,7 @@ class FloatingHUD:
         self.segment_idx = seg_idx
 
     def show_processing(self):
+        self.generation += 1
         self.hud_mode = "PROCESSING"
         self.proc_start_time = time.time()
         self.anim_idx = 0
@@ -285,36 +285,61 @@ class FloatingHUD:
         self.window.orderFrontRegardless()
         self._start_animation()
 
-    def show_success(self):
+    def show_success(self, msg="✅ 潤飾完成，已自動貼上！"):
+        self.generation += 1
+        gen = self.generation
         self.hud_mode = "SUCCESS"
         self._stop_animation()
+        self.window.setAlphaValue_(1.0)
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(0.3, 0.9, 0.45, 1.0))
-        self.label.setStringValue_("✅ 潤飾完成，已自動貼上！")
+        self.label.setStringValue_(msg)
         self.window.orderFrontRegardless()
         AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            0.8, self, "fadeOut:", None, False
+            0.8, self, "fadeOut:", gen, False
         )
 
-    def show_cancel(self, msg="⚠️ 未偵測到聲音"):
+    def show_cancel(self, msg="⚠️ 錄音已取消"):
+        self.generation += 1
+        gen = self.generation
         self.hud_mode = "CANCEL"
         self._stop_animation()
+        self.window.setAlphaValue_(1.0)
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.7, 0.3, 1.0))
         self.label.setStringValue_(msg)
         self.window.orderFrontRegardless()
         AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            0.8, self, "fadeOut:", None, False
+            0.8, self, "fadeOut:", gen, False
+        )
+
+    def show_toast(self, msg):
+        self.generation += 1
+        gen = self.generation
+        self.hud_mode = "TOAST"
+        self._stop_animation()
+        self.window.setAlphaValue_(1.0)
+        self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(0.35, 0.75, 1.0, 1.0))
+        self.label.setStringValue_(msg)
+        self.window.orderFrontRegardless()
+        AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            1.0, self, "fadeOut:", gen, False
         )
 
     def fadeOut_(self, timer):
+        timer_gen = timer.userInfo()
+        if timer_gen != self.generation:
+            return  # Superseded by a newer session
         AppKit.NSAnimationContext.beginGrouping()
         AppKit.NSAnimationContext.currentContext().setDuration_(0.3)
         self.window.animator().setAlphaValue_(0.0)
         AppKit.NSAnimationContext.endGrouping()
         AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            0.35, self, "finishHide:", None, False
+            0.35, self, "finishHide:", timer_gen, False
         )
 
     def finishHide_(self, timer):
+        timer_gen = timer.userInfo()
+        if timer_gen != self.generation:
+            return
         if self.hud_mode == "RECORDING":
             return
         self.window.orderOut_(None)
@@ -364,12 +389,22 @@ class AltVoiceInputManager:
         self.segment_idx = 1
         self.lock = threading.Lock()
         
+        # Session & Sequential FIFO Delivery Guard
+        self.session_token = 0
+        self.next_deliver_seq = 1
+        self.pending_results = {}  # seq -> text
+        self.delivery_lock = threading.Lock()
         self.active_tasks = 0
-        self.paste_lock = threading.Lock()
-        
+
+        # Caching for instant re-paste (Ctrl + Cmd + V)
+        self.last_transcript = ""
+
+        # Key state tracking
         self.alt_pressed = False
         self.alt_press_time = 0
         self.other_key_pressed = False
+        self.ctrl_pressed = False
+        self.cmd_pressed = False
 
         # Background watchdog for auto-chunking
         threading.Thread(target=self._auto_chunk_watchdog, daemon=True).start()
@@ -388,8 +423,10 @@ class AltVoiceInputManager:
                 return
             old_file = self.current_recording_path
             old_proc = self.ffmpeg_proc
+            old_seq = self.segment_idx
+            current_token = self.session_token
             
-            # Launch the next segment before stopping the previous one.
+            # Launch the next segment before stopping the previous one
             new_file = f"/tmp/alt_voice_input_{int(time.time() * 1000)}.wav"
             cmd = [
                 FFMPEG_BIN,
@@ -405,7 +442,7 @@ class AltVoiceInputManager:
                 self.ffmpeg_proc = spawn_ffmpeg(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception as e:
                 log(f"Failed to spawn rotated ffmpeg: {e}")
-                return  # Keep the previous recorder and its state intact.
+                return
 
             self.segment_idx += 1
             self.seg_start_time = time.time()
@@ -416,12 +453,21 @@ class AltVoiceInputManager:
             # Update HUD to reflect new segment
             AppHelper.callAfter(self.hud.update_recording_segment, self.segment_idx)
 
-            # Dispatch old audio chunk to AI worker
+            # Dispatch old audio chunk to AI worker with session & sequence token
             self.active_tasks += 1
-            threading.Thread(target=self._process_worker, args=(old_file, seg_elapsed, True), daemon=True).start()
+            threading.Thread(
+                target=self._process_worker,
+                args=(old_file, seg_elapsed, True, current_token, old_seq),
+                daemon=True
+            ).start()
 
     def on_press(self, key):
-        if key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
+        # 1. Track Modifiers
+        if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
+            self.ctrl_pressed = True
+        elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
+            self.cmd_pressed = True
+        elif key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
             if not self.alt_pressed:
                 self.alt_pressed = True
                 self.alt_press_time = time.time()
@@ -430,20 +476,86 @@ class AltVoiceInputManager:
             if self.alt_pressed:
                 self.other_key_pressed = True
 
+        # 2. ESC Cancel (Immediate cancel during recording or processing)
+        if key == keyboard.Key.esc:
+            if self.is_recording or self.active_tasks > 0:
+                log("🛑 Esc pressed. Cancelling active voice session...")
+                self.cancel_session()
+                return
+
+        # 3. Ctrl + Cmd + V Instant Re-Paste
+        is_v = False
+        if hasattr(key, 'char') and key.char in ('v', 'V', '\x16'):
+            is_v = True
+        elif getattr(key, 'vk', None) == 9:
+            is_v = True
+
+        if is_v and self.ctrl_pressed and self.cmd_pressed:
+            log("📋 Ctrl + Cmd + V detected. Triggering instant re-paste...")
+            self.re_paste_last()
+            return
+
     def on_release(self, key):
-        if key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
+        if key in (keyboard.Key.ctrl, keyboard.Key.ctrl_l, keyboard.Key.ctrl_r):
+            self.ctrl_pressed = False
+        elif key in (keyboard.Key.cmd, keyboard.Key.cmd_l, keyboard.Key.cmd_r):
+            self.cmd_pressed = False
+        elif key in (keyboard.Key.alt, keyboard.Key.alt_l, keyboard.Key.alt_r):
             if self.alt_pressed:
                 press_duration = time.time() - self.alt_press_time
                 was_solo = not self.other_key_pressed
                 self.alt_pressed = False
                 
+                # Tap detection: single Option tap without other keys held
                 if was_solo and 0.02 <= press_duration <= 1.2:
                     log(f"🔘 Option tapped ({press_duration:.2f}s). Toggling recording...")
                     self.toggle()
                 elif not was_solo:
-                    log("ℹ️ Option key combination detected, skipping dictation.")
+                    log("ℹ️ Option combination key released, skipping dictation toggle.")
                 else:
-                    log(f"ℹ️ Option key duration ({press_duration:.2f}s) ignored.")
+                    log(f"ℹ️ Option key duration ({press_duration:.2f}s) outside tap threshold.")
+
+    def cancel_session(self):
+        """Cancels recording or invalidates in-flight AI processing immediately."""
+        with self.lock:
+            # Advance token to invalidate all in-flight workers of this session
+            self.session_token += 1
+            was_rec = self.is_recording
+            proc = self.ffmpeg_proc
+            audio_file = self.current_recording_path
+            self.is_recording = False
+            self.ffmpeg_proc = None
+            self.current_recording_path = None
+
+        with self.delivery_lock:
+            self.pending_results.clear()
+            self.next_deliver_seq = 1
+
+        if was_rec and proc is not None:
+            stop_ffmpeg(proc)
+
+        if audio_file and os.path.exists(audio_file):
+            try:
+                os.remove(audio_file)
+            except Exception:
+                pass
+
+        play_sound(SOUND_CANCEL)
+        AppHelper.callAfter(self.hud.show_cancel, "🛑 語音輸入已取消")
+        log("Session cancelled cleanly by user.")
+
+    def re_paste_last(self):
+        """Instantly pastes the most recently polished text without making any network call."""
+        if not self.last_transcript:
+            log("No cached transcript available for re-paste.")
+            AppHelper.callAfter(self.hud.show_cancel, "⚠️ 尚無可重貼的文字紀錄")
+            play_sound(SOUND_CANCEL)
+            return
+
+        log(f"Re-pasting cached text ({len(self.last_transcript)} chars)...")
+        self._paste_text(self.last_transcript)
+        play_sound(SOUND_SUCCESS)
+        AppHelper.callAfter(self.hud.show_toast, "📋 已重新貼上！")
 
     def toggle(self):
         with self.lock:
@@ -455,15 +567,20 @@ class AltVoiceInputManager:
                 self.stop_recording_and_process()
 
     def start_recording(self):
+        self.session_token += 1
         self.is_recording = True
         self.record_total_start = time.time()
         self.seg_start_time = time.time()
         self.segment_idx = 1
+
+        with self.delivery_lock:
+            self.pending_results.clear()
+            self.next_deliver_seq = 1
         
         audio_file = f"/tmp/alt_voice_input_{int(time.time() * 1000)}.wav"
         self.current_recording_path = audio_file
         
-        log(f"🎤 [Start Recording] File: {audio_file}")
+        log(f"🎤 [Start Recording] Session: {self.session_token}, File: {audio_file}")
         play_sound(SOUND_START)
         AppHelper.callAfter(self.hud.show_recording, 1)
 
@@ -490,9 +607,11 @@ class AltVoiceInputManager:
         total_elapsed = time.time() - self.record_total_start
         proc = self.ffmpeg_proc
         audio_file = self.current_recording_path
+        current_token = self.session_token
+        current_seq = self.segment_idx
         self.ffmpeg_proc = None
 
-        log(f"⏹️ [Stop Recording] Segment: {seg_elapsed:.2f}s, Total: {total_elapsed:.2f}s. Processing...")
+        log(f"⏹️ [Stop Recording] Segment {current_seq}: {seg_elapsed:.2f}s, Total: {total_elapsed:.2f}s. Processing...")
         play_sound(SOUND_STOP)
 
         stop_ffmpeg(proc)
@@ -500,20 +619,28 @@ class AltVoiceInputManager:
         self.active_tasks += 1
         AppHelper.callAfter(self.hud.show_processing)
 
-        threading.Thread(target=self._process_worker, args=(audio_file, seg_elapsed, False), daemon=True).start()
+        threading.Thread(
+            target=self._process_worker,
+            args=(audio_file, seg_elapsed, False, current_token, current_seq),
+            daemon=True
+        ).start()
 
-    def _process_worker(self, audio_file, elapsed, is_auto_chunk=False):
+    def _process_worker(self, audio_file, elapsed, is_auto_chunk, token, seq):
         try:
             time.sleep(0.15)
+            if token != self.session_token:
+                log(f"Worker for session {token} discarded (stale).")
+                return
+
             if not os.path.exists(audio_file):
-                log("Audio file missing.")
-                if not self.is_recording and not is_auto_chunk:
-                    AppHelper.callAfter(self.hud.show_cancel, "⚠️ 錄音檔案遺失")
+                log(f"Audio file missing for seq {seq}.")
+                self._advance_empty_seq(token, seq)
                 return
 
             file_size = os.path.getsize(audio_file)
             if file_size < 3000 or elapsed < 0.3:
                 log(f"Recording too short ({elapsed:.2f}s, {file_size} bytes). Discarded.")
+                self._advance_empty_seq(token, seq)
                 if not self.is_recording and not is_auto_chunk and self.active_tasks <= 1:
                     play_sound(SOUND_CANCEL)
                     AppHelper.callAfter(self.hud.show_cancel, "⚠️ 說話時間過短")
@@ -523,26 +650,28 @@ class AltVoiceInputManager:
                 audio_b64 = base64.b64encode(f.read()).decode("utf-8")
 
             text, api_error = self._call_gemini_multimodal(audio_b64)
+            if token != self.session_token:
+                log(f"Session {token} cancelled during API call, dropping seq {seq}.")
+                return
+
             if text and text != "[EMPTY]" and text.strip():
-                log(f"✨ [AI Result]: {text}")
-                with self.paste_lock:
-                    self._paste_text(text.strip())
-                    if not self.is_recording and not is_auto_chunk:
-                        play_sound(SOUND_SUCCESS)
-                if not self.is_recording:
-                    AppHelper.callAfter(self.hud.show_success)
+                log(f"✨ [AI Result Seq {seq}]: {text}")
+                self._enqueue_delivery(token, seq, text.strip())
             elif api_error:
-                log(f"❌ [AI Error]: All API attempts failed: {api_error}")
+                log(f"❌ [AI Error Seq {seq}]: {api_error}")
+                self._advance_empty_seq(token, seq)
                 if not self.is_recording and not is_auto_chunk and self.active_tasks <= 1:
                     play_sound(SOUND_CANCEL)
-                    AppHelper.callAfter(self.hud.show_cancel, "❌ AI 服務連線失敗，請檢查網路")
+                    AppHelper.callAfter(self.hud.show_cancel, "❌ AI 服務連線失敗")
             else:
-                log("⚠️ [AI Result]: No speech recognized or empty.")
+                log(f"⚠️ [AI Result Seq {seq}]: No speech recognized.")
+                self._advance_empty_seq(token, seq)
                 if not self.is_recording and not is_auto_chunk and self.active_tasks <= 1:
                     play_sound(SOUND_CANCEL)
                     AppHelper.callAfter(self.hud.show_cancel, "⚠️ 未辨識出有效聲音")
         except Exception as e:
-            log(f"Process worker error: {e}")
+            log(f"Process worker error in seq {seq}: {e}")
+            self._advance_empty_seq(token, seq)
             if not self.is_recording and not is_auto_chunk:
                 play_sound(SOUND_CANCEL)
                 AppHelper.callAfter(self.hud.show_cancel, "❌ 辨識處理異常")
@@ -554,7 +683,35 @@ class AltVoiceInputManager:
                     os.remove(audio_file)
             except Exception:
                 pass
-            log("Task finished.")
+
+    def _enqueue_delivery(self, token, seq, text):
+        """P0 Sequential Order Queue: Guarantees chunk 1 pastes before chunk 2."""
+        with self.delivery_lock:
+            if token != self.session_token:
+                return
+            self.pending_results[seq] = text
+            self._drain_delivery(token)
+
+    def _advance_empty_seq(self, token, seq):
+        """Advances delivery pointer when a segment yields no text to avoid blocking later chunks."""
+        with self.delivery_lock:
+            if token != self.session_token:
+                return
+            if self.next_deliver_seq == seq:
+                self.next_deliver_seq += 1
+                self._drain_delivery(token)
+
+    def _drain_delivery(self, token):
+        while self.next_deliver_seq in self.pending_results:
+            text = self.pending_results.pop(self.next_deliver_seq)
+            log(f"📦 [Sequential Deliver Seq {self.next_deliver_seq}]: {text}")
+            self._paste_text(text)
+            self.last_transcript = text
+            self.next_deliver_seq += 1
+
+            if not self.is_recording and not self.pending_results:
+                play_sound(SOUND_SUCCESS)
+                AppHelper.callAfter(self.hud.show_success)
 
     def _call_gemini_multimodal(self, audio_b64):
         payload = {
@@ -611,13 +768,14 @@ class AltVoiceInputManager:
         ascript = 'tell application "System Events" to keystroke "v" using command down'
         subprocess.run(["osascript", "-e", ascript], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+
 def main():
     atexit.register(cleanup_ffmpeg)
     signal.signal(signal.SIGTERM, handle_exit_signal)
     signal.signal(signal.SIGINT, handle_exit_signal)
     listener = None
     try:
-        log("=== Starting Alt Voice Input Continuous Engine with Live HUD Timers ===")
+        log("=== Starting Alt Voice Input (Ultra-Pure Dictation Engine) ===")
         if not os.path.exists(FFMPEG_BIN):
             log(f"❌ 致命錯誤: 找不到 ffmpeg ({FFMPEG_BIN})，請先安裝: brew install ffmpeg")
             sys.exit(1)
@@ -629,9 +787,8 @@ def main():
             return
         listener = keyboard.Listener(on_press=manager.on_press, on_release=manager.on_release)
         listener.start()
-        log("Listening for Option (Alt) taps globally. Running event loop...")
-        # Re-enter Python while the Cocoa loop is idle so pending POSIX
-        # signals are handled even when the HUD animation is not running.
+        log("Listening for Option (Dictate), Esc (Cancel), and Ctrl+Cmd+V (Re-paste). Running loop...")
+
         def signal_heartbeat():
             if not _shutdown.is_set():
                 AppHelper.callLater(0.2, signal_heartbeat)
