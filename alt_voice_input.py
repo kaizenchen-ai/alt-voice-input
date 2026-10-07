@@ -102,8 +102,8 @@ def load_env_keys():
     return keys
 
 API_KEYS = load_env_keys()
-# Priority: Flash Lite has 0 rate limit and <1s latency; followed by Flash Latest and Flash 3.5
-CANDIDATE_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-3.5-flash"]
+# Priority: Flash-Lite models with 0 rate limit, <1s latency, and verified 100% 200 OK uptime
+CANDIDATE_MODELS = ["gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]
 
 LOCK_FILE = "/tmp/alt_voice_input.lock"
 _lock_fd = None
@@ -181,7 +181,7 @@ def get_system_prompt():
 4. 【智慧項目條列排版】：若口述內容包含「多個並列事項、不同任務清單、執行步驟、或同類要點」，請主動排版為清晰條理的項目清單（依語意採用數字編號「1. 2. 3.」或項目符號「•」分行呈現），使其一目了然。
 5. 【結構通順與標點符號】：陳述性敘述請重組為自然分段、標點正確的標準繁體中文。
 6. 【輸出規範鐵則】：直接輸出修飾後的純文字內容，絕對嚴禁任何開場白、不要引號、不要任何「好的」、「這是整理後的內容」等廢話。
-7. 若音訊中只有空白、純雜音或無聲音，請僅回傳 [EMPTY]。"""
+7. 【人聲最大化提取】：請竭盡全力辨識音訊中的人聲語意。即使背景有微弱雜音或微弱電流聲，也請自動過濾雜音並精準還原人聲說話內容。只有在整段音訊完全沒有任何人聲說話時，才回傳 [EMPTY]。"""
 
 def apply_vocabulary_post_processing(text):
     mappings, _ = load_vocabulary()
@@ -717,6 +717,7 @@ class AltVoiceInputManager:
                 "-loglevel", "error",
                 "-f", "avfoundation",
                 "-i", f":{self.device_idx}",
+                "-af", "highpass=f=120,lowpass=f=3800",
                 "-ar", "16000",
                 "-ac", "1",
                 new_file
@@ -946,6 +947,7 @@ class AltVoiceInputManager:
             "-loglevel", "error",
             "-f", "avfoundation",
             "-i", f":{self.device_idx}",
+            "-af", "highpass=f=120,lowpass=f=3800",
             "-ar", "16000",
             "-ac", "1",
             audio_file
@@ -1005,7 +1007,7 @@ class AltVoiceInputManager:
             with open(audio_file, "rb") as f:
                 audio_b64 = base64.b64encode(f.read()).decode("utf-8")
 
-            text, api_error = self._call_gemini_multimodal(audio_b64)
+            text, api_error = self._call_gemini_multimodal(audio_b64, elapsed=elapsed)
             if token != self.session_token:
                 log(f"Session {token} cancelled during API call, dropping seq {seq}.")
                 return
@@ -1077,7 +1079,7 @@ class AltVoiceInputManager:
                 play_sound(SOUND_SUCCESS)
                 AppHelper.callAfter(self.hud.show_success)
 
-    def _call_gemini_multimodal(self, audio_b64):
+    def _call_gemini_multimodal(self, audio_b64, elapsed=5.0):
         payload = {
             "contents": [{
                 "parts": [
@@ -1092,11 +1094,13 @@ class AltVoiceInputManager:
         }
         body = json.dumps(payload).encode("utf-8")
 
+        # Dynamic timeout: scale with audio length (e.g., 20s recording gets ~30s timeout)
+        timeout = max(15.0, min(40.0, elapsed * 1.5))
+
         last_error = None
         for key in API_KEYS:
             for model in CANDIDATE_MODELS:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-                timeout = 7.0
                 req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
                 try:
                     t0 = time.time()
