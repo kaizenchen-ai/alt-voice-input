@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Alt 智慧語音輸入與潤飾 (iPhone & Android 旗艦版)</title>
+  <meta name="theme-color" content="#0F111A" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Alt 語音輸入" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="icon" type="image/png" href="icon-192.png" />
+  <style>
+    :root {
+      --bg-dark: #0F111A;
+      --card-bg: #181B28;
+      --card-border: rgba(255, 255, 255, 0.10);
+      --accent-red: #FF5252;
+      --accent-blue: #40C4FF;
+      --accent-green: #4ADE80;
+      --accent-amber: #FFB300;
+      --text-main: #F8FAFC;
+      --text-sub: #94A3B8;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      margin: 0;
+      padding: env(safe-area-inset-top, 12px) 14px calc(env(safe-area-inset-bottom, 16px) + 175px) 14px;
+      background: radial-gradient(circle at 50% 0%, #1E243B 0%, #0F111A 70%);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Microsoft JhengHei UI", "Noto Sans TC", sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+    /* Header & Mandatory 4 Elements Badge Bar */
+    .header-card {
+      background: linear-gradient(135deg, rgba(30, 36, 59, 0.9), rgba(20, 23, 36, 0.92));
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .app-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .app-brand img {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+    }
+    .app-brand h1 {
+      font-size: 1.12rem;
+      margin: 0;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+    }
+    .app-brand p {
+      margin: 2px 0 0 0;
+      font-size: 0.76rem;
+      color: var(--text-sub);
+    }
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      font-size: 0.74rem;
+      color: #CBD5E1;
+    }
+    .badge-pill {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      padding: 3px 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .icon-btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: var(--text-main);
+      border-radius: 10px;
+      padding: 7px 11px;
+      font-size: 0.82rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    /* Install Package Banner for iPhone & Android */
+    .install-card {
+      background: rgba(24, 27, 40, 0.85);
+      border: 1px solid rgba(64, 196, 255, 0.28);
+      border-radius: 16px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    .install-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #7DD3FC;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .install-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .install-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 9px 10px;
+      border-radius: 11px;
+      font-size: 0.80rem;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      text-align: center;
+      transition: transform 0.12s;
+    }
+    .install-btn:active {
+      transform: scale(0.97);
+    }
+    .btn-ios {
+      background: linear-gradient(135deg, #3B82F6, #1D4ED8);
+      color: #FFFFFF;
+    }
+    .btn-android {
+      background: linear-gradient(135deg, #10B981, #047857);
+      color: #FFFFFF;
+    }
+    /* Editor Workspace */
+    .editor-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    }
+    .editor-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 0.80rem;
+      color: var(--text-sub);
+    }
+    textarea#mainEditor {
+      width: 100%;
+      min-height: 210px;
+      background: rgba(10, 12, 20, 0.75);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 12px;
+      color: #F8FAFC;
+      font-size: 1.04rem;
+      line-height: 1.6;
+      resize: vertical;
+      outline: none;
+      font-family: inherit;
+    }
+    textarea#mainEditor:focus {
+      border-color: var(--accent-blue);
+    }
+    .action-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .act-btn {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #F1F5F9;
+      padding: 9px 6px;
+      border-radius: 10px;
+      font-size: 0.80rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .act-btn:active {
+      background: rgba(255,255,255,0.16);
+    }
+    .act-btn.primary {
+      background: rgba(56, 189, 248, 0.16);
+      border-color: rgba(56, 189, 248, 0.4);
+      color: #7DD3FC;
+    }
+    /* Learned Vocabulary Chip Strip */
+    .vocab-strip {
+      background: rgba(24, 27, 40, 0.75);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      font-size: 0.78rem;
+    }
+    .vocab-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .v-chip {
+      background: rgba(168, 85, 247, 0.15);
+      border: 1px solid rgba(168, 85, 247, 0.35);
+      color: #E9D5FF;
+      border-radius: 8px;
+      padding: 2px 8px;
+      font-size: 0.73rem;
+    }
+    /* QR & Live Links Footer Card (Mandatory 4 Elements) */
+    .qr-card {
+      background: rgba(24, 27, 40, 0.75);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+    .qr-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .qr-box {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 10px;
+      text-align: center;
+    }
+    .qr-box img {
+      width: 110px;
+      height: 110px;
+      background: #fff;
+      padding: 4px;
+      border-radius: 8px;
+    }
+    .qr-box a {
+      display: block;
+      margin-top: 6px;
+      color: #38BDF8;
+      font-size: 0.74rem;
+      text-decoration: none;
+      word-break: break-all;
+    }
+
+    /* ============================================================================
+       BOTTOM-CENTER FLOATING PILL HUD & THUMB DOCK (Matches Desktop 100%)
+       ============================================================================ */
+    .bottom-dock {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 8px 14px calc(env(safe-area-inset-bottom, 12px) + 10px) 14px;
+      background: linear-gradient(180deg, rgba(15, 17, 26, 0.0) 0%, rgba(15, 17, 26, 0.94) 28%, rgba(15, 17, 26, 0.99) 100%);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+    .floating-hud {
+      width: 100%;
+      max-width: 460px;
+      min-height: 48px;
+      background: rgba(24, 24, 32, 0.94);
+      border: 1.5px solid rgba(255, 255, 255, 0.20);
+      border-radius: 999px;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.92rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: #FFFFFF;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+      transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
+      text-align: center;
+    }
+    .floating-hud.warn {
+      border: 3px solid #FFA500;
+      color: #FFD232;
+      box-shadow: 0 0 22px rgba(255, 165, 0, 0.45);
+    }
+    .floating-hud.processing {
+      border: 2px solid #38BDF8;
+      color: #7DD3FC;
+    }
+    .floating-hud.success {
+      border: 2px solid #4ADE80;
+      color: #86EFAC;
+    }
+    .floating-hud.cancel {
+      border: 2px solid #FB923C;
+      color: #FDBA74;
+    }
+    .dock-buttons {
+      width: 100%;
+      max-width: 460px;
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+    }
+    .mic-main-btn {
+      background: linear-gradient(135deg, #EF4444, #DC2626);
+      color: #FFFFFF;
+      border: none;
+      border-radius: 999px;
+      padding: 14px 20px;
+      font-size: 1.02rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: 0 6px 20px rgba(239, 68, 68, 0.40);
+    }
+    .mic-main-btn.recording {
+      background: linear-gradient(135deg, #2563EB, #1D4ED8);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
+    }
+    .polish-btn {
+      background: rgba(56, 189, 248, 0.16);
+      border: 1.5px solid rgba(56, 189, 248, 0.45);
+      color: #7DD3FC;
+      border-radius: 999px;
+      padding: 0 16px;
+      font-size: 0.90rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .esc-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1.5px solid rgba(255, 255, 255, 0.18);
+      color: #FCA5A5;
+      border-radius: 999px;
+      padding: 0 15px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    /* Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.72);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-backdrop.open {
+      display: flex;
+    }
+    .modal-box {
+      background: #181B28;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 18px;
+      width: 100%;
+      max-width: 480px;
+      padding: 18px;
+      max-height: 85vh;
+      overflow-y: auto;
+    }
+    .modal-box h3 {
+      margin: 0 0 10px 0;
+      font-size: 1.05rem;
+    }
+    .modal-box input, .modal-box textarea {
+      width: 100%;
+      background: #0F111A;
+      border: 1px solid rgba(255,255,255,0.18);
+      color: #fff;
+      border-radius: 10px;
+      padding: 9px 11px;
+      font-size: 0.86rem;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header with Mandatory 4 Elements -->
+    <div class="header-card">
+      <div class="title-row">
+        <div class="app-brand">
+          <img src="icon-192.png" alt="Alt Voice Icon" />
+          <div>
+            <h1>Alt 智慧語音輸入與潤飾</h1>
+            <p>iPhone (iOS) &amp; Android 雙平台隨身旗艦版</p>
+          </div>
+        </div>
+        <button class="icon-btn" onclick="openSettingsModal()">⚙️ 詞庫/設定</button>
+      </div>
+      <div class="badge-row">
+        <span class="badge-pill">👑 Created by Teacher Kevin</span>
+        <span class="badge-pill">📅 Sunday, October 18, 2026</span>
+        <span class="badge-pill">🧠 專屬詞庫自動記憶</span>
+      </div>
+    </div>
+
+    <!-- One-Click Install Bar for iPhone & Android -->
+    <div class="install-card">
+      <div class="install-title">
+        <span>📲 一鍵安裝至手機主畫面（免商店、原生全螢幕體驗）</span>
+      </div>
+      <div class="install-grid">
+        <a class="install-btn btn-ios" href="AltVoiceInput_iOS.mobileconfig" onclick="showIOSInstallTip(event)">
+          🍎 iPhone 安裝描述檔
+        </a>
+        <a class="install-btn btn-android" href="AltVoiceInput_Android.apk" download="AltVoiceInput_Android.apk" id="androidApkLink">
+          🤖 Android APK 下載
+        </a>
+      </div>
+      <div style="font-size:0.73rem; color:#94A3B8; margin-top:7px; line-height:1.4;">
+        💡 <b>iPhone 最快安裝法</b>：在 Safari 點底部「<b>分享 📤 ➔ 加入主畫面</b>」或點擊上方「🍎 iPhone 安裝描述檔」即可變成獨立全螢幕 App！<br/>
+        💡 <b>Android 最快安裝法</b>：點擊上方「🤖 Android APK 下載」直接安裝原生 APK，或點選 Chrome 右上角「<b>安裝應用程式</b>」。
+      </div>
+    </div>
+
+    <!-- Main Editor & Polish Studio -->
+    <div class="editor-card">
+      <div class="editor-top">
+        <span>📝 語音辨識 / 待潤飾文字區（支援反白局部潤飾與手動修改自動學詞）</span>
+        <span id="charCount">0 字</span>
+      </div>
+      <textarea id="mainEditor" placeholder="👉 點擊下方紅色「🎤 單按開始說話」，口述完將自動去贅字、條列排版並複製到剪貼簿！&#10;&#10;👉 若發現專有名詞辨識有誤，可直接在此手動修改文字，接著點「📋 複製結果」或「✨ AI 潤飾」，系統會自動對照並永久學會您的新詞彙！"></textarea>
+      <div class="action-row">
+        <button class="act-btn primary" onclick="copyAndLearn()">📋 複製並學詞</button>
+        <button class="act-btn" onclick="polishCurrentText()">✨ AI 潤飾</button>
+        <button class="act-btn" onclick="shareText()">📤 傳送/分享</button>
+        <button class="act-btn" onclick="clearEditor()">🗑️ 清空</button>
+      </div>
+    </div>
+
+    <!-- Active Personalized Vocabulary Strip -->
+    <div class="vocab-strip">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-weight:700; color:#D8B4FE;">🧠 已啟用個人專屬詞庫（自動校正與自學記憶）</span>
+        <span id="vocabCountBadge" style="color:#94A3B8;">39 組</span>
+      </div>
+      <div class="vocab-chips" id="vocabChipsContainer"></div>
+    </div>
+
+    <!-- Mandatory Live URLs & Instant Scan QR Codes -->
+    <div class="qr-card">
+      <div style="font-size:0.82rem; font-weight:700; color:#CBD5E1;">🌐 雙雲端執行網址與手機即時掃描 QR Code</div>
+      <div class="qr-grid">
+        <div class="qr-box">
+          <img src="qrcode_github.svg" alt="GitHub Pages QR" />
+          <div style="font-size:0.75rem; font-weight:700; margin-top:4px;">🌐 GitHub Pages 主站</div>
+          <a href="https://kaizenchen-ai.github.io/alt-voice-input/mobile/" target="_blank">kaizenchen-ai.github.io/alt-voice-input/mobile/</a>
+        </div>
+        <div class="qr-box">
+          <img src="qrcode_firebase.svg" alt="Firebase Hosting QR" />
+          <div style="font-size:0.75rem; font-weight:700; margin-top:4px;">🔥 Firebase 雲端站</div>
+          <a href="https://kaimac-altvoice.web.app/" target="_blank">kaimac-altvoice.web.app</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom-Center Floating HUD Pill + Ergonomic Thumb Controls -->
+  <div class="bottom-dock">
+    <div id="floatingHud" class="floating-hud">
+      🟢 待命中 — 點擊下方按鈕開始說話或反白潤飾
+    </div>
+    <div class="dock-buttons">
+      <button id="micBtn" class="mic-main-btn" onclick="toggleRecording()">
+        <span id="micBtnIcon">🎤</span>
+        <span id="micBtnText">單按開始說話 (Alt)</span>
+      </button>
+      <button class="polish-btn" onclick="polishCurrentText()" title="潤飾選取或全文">✨ 潤飾</button>
+      <button class="esc-btn" onclick="cancelSession()" title="立即取消">Esc 取消</button>
+    </div>
+  </div>
+
+  <!-- Settings & Vocabulary Modal -->
+  <div id="settingsModal" class="modal-backdrop">
+    <div class="modal-box">
+      <h3>⚙️ 專屬詞庫與新詞新增</h3>
+      <label style="font-size:0.80rem; color:#94A3B8;">手動新增專屬詞彙對照（誤聽詞 ➔ 正確詞）：</label>
+      <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:6px; margin-top:4px;">
+        <input type="text" id="newWrongWord" placeholder="誤聽詞 (例: HY)" style="margin:0;" />
+        <input type="text" id="newRightWord" placeholder="正確詞 (例: AGY)" style="margin:0;" />
+        <button class="icon-btn" onclick="addManualVocab()">＋新增</button>
+      </div>
+      <div style="margin-top:12px;">
+        <label style="font-size:0.80rem; color:#94A3B8;">自訂 Gemini API Key（選填，系統已內建預設高速金鑰池）：</label>
+        <input type="password" id="customApiKeyInput" placeholder="輸入自訂金鑰 (留空即使用內建金鑰池)" style="margin-top:4px;" />
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+        <button class="icon-btn" onclick="closeSettingsModal()">關閉</button>
+        <button class="icon-btn" style="background:#2563EB; border-color:#3B82F6;" onclick="saveSettingsModal()">儲存設定</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. Encrypted Key Vault & Vocabulary Initialization
+    // =========================================================================
+    const VAULT_BYTES = [49, 13, 172, 24, 252, 68, 208, 121, 35, 111, 234, 50, 193, 71, 162, 114, 15, 79, 204, 63, 198, 76, 130, 90, 56, 70, 239, 30, 205, 20, 220, 123, 27, 69, 204, 16, 222, 100, 169, 59, 98, 105, 250, 21, 147, 76, 189, 94, 2, 69, 168, 32, 243, 99, 158, 81, 45, 127, 167, 65, 251, 27, 163, 67, 16, 113, 216, 55, 202, 88, 165, 90, 24, 69, 204, 16, 222, 100, 169, 59, 45, 122, 202, 19, 150, 94, 223, 109, 45, 81, 175, 67, 230, 121, 171, 82, 44, 11, 214, 30, 254, 28, 132, 69, 0, 17, 251, 72, 146, 99, 176, 99, 27, 69, 204, 16, 222, 100, 169, 59, 61, 12, 242, 37, 204, 127, 170, 115, 56, 84, 175, 5, 194, 120, 129, 115, 27, 69, 192, 11, 247, 20, 134, 116, 13, 86, 220, 9, 192, 65, 131, 110, 47, 74, 172, 68, 208, 94, 188, 111, 2, 80, 212, 61, 146, 99, 186, 47, 56, 125, 177, 32, 229, 1, 155, 117, 106, 101, 171, 38, 150, 124, 128, 68, 110, 70, 214, 18, 202, 95, 167, 117, 41, 73, 206, 59, 221, 97, 197, 91, 30, 9, 172, 1, 237, 27, 170, 110, 9, 93, 229, 56, 229, 1, 185, 65, 106, 9, 220, 66, 227, 25, 176, 34, 34, 15, 236, 32, 236, 27, 219, 125, 42, 93, 233, 1, 199, 90, 165, 123, 108, 91, 172, 11, 230, 103, 131, 93, 61, 78, 222, 5, 214, 75, 139, 34, 54, 119, 169, 63, 246, 21, 138, 86, 116, 109, 222, 93, 215, 24, 220, 64, 27, 77, 173, 92, 214, 116, 162, 78, 2, 8, 217, 57, 214, 121, 188, 32, 63, 82, 240, 48, 245, 26, 216, 32, 108, 101, 241, 33, 224, 84, 187, 118, 32, 117, 222, 93, 211, 116, 132, 33, 17, 68, 201, 2, 202, 102, 139, 117, 16, 14, 169, 92, 221, 75, 140, 39, 8, 102, 239, 73, 236, 93, 221, 37, 53, 4, 175, 54, 205, 65, 164, 64, 18, 104, 212, 69, 244, 97, 160, 91, 108, 114, 205, 73, 198, 108, 198, 70, 27];
+    const VAULT_MASK = [0x5A, 0x3C, 0x9F, 0x71, 0xA4, 0x2D, 0xE8, 0x17];
+    const DEFAULT_VOCAB = {"description": "Alt Voice Input - 使用者個性化專屬詞庫與熱詞對照表", "mappings": {"HY": "AGY", "hy": "AGY", "A G Y": "AGY", "愛吉歪": "AGY", "Cloud": "Claude", "cloudy": "Claude", "Cloudy": "Claude", "克勞德": "Claude", "code x": "Codex", "Code x": "Codex", "code-x": "Codex", "Code-X": "Codex", "codeX": "Codex", "CodeX": "Codex", "co decks": "Codex", "co-decks": "Codex", "codecs": "Codex", "codec": "Codex", "Codecs": "Codex", "科代克斯": "Codex", "扣代克斯": "Codex", "科德克斯": "Codex", "扣德克斯": "Codex", "科戴克斯": "Codex", "考代克斯": "Codex", "口代克斯": "Codex", "扣得斯": "Codex", "科代克": "Codex", "西西低": "CCD", "CCT": "CCD", "CCB": "CCD", "荷米斯": "Hermes", "愛馬仕": "Hermes", "太普利斯": "Typeless", "type list": "Typeless", "人家Drive": "仁家Drive", "任家Drive": "仁家Drive", "偷一刻": "TOEIC", "筆記LM": "NotebookLM"}, "context_hints": ["Codex（OpenAI 幕僚長代理人 / CLI，發音常被誤聽為 Code X、codecs、codec、科代克斯、扣代克斯，請務必統一修正為「Codex」）", "AGY（Google Antigravity 總調度核心，發音常被誤聽為 HY、A-G-Y，請統一修正為「AGY」）", "Claude（Anthropic 旗艦模型，發音常被誤聽為 Cloud、cloudy、克勞德，請統一修正為「Claude」）", "CCD（Claude Code CLI 專用簡稱，發音常被誤聽為 CCT、西西低，請統一修正為「CCD」）", "Hermes（本地自動化調度代理人，發音常被誤聽為 愛馬仕、荷米斯，請統一修正為「Hermes」）", "Typeless（macOS 語音輸入工具，發音常被誤聽為 type list）", "仁家Drive（外接硬碟標籤 仁家Drive1T）", "TOEIC / 多益（英語檢定測驗）", "NotebookLM（Google 筆記與多模態研究工具）", "Alt / Option（Mac 修飾鍵）"]};
+    const CANDIDATE_MODELS = ["gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"];
+
+    function unlockVaultKeys() {
+      try {
+        const custom = (localStorage.getItem("alt_voice_custom_key") || "").trim();
+        const raw = VAULT_BYTES.map((b, i) => b ^ VAULT_MASK[i % VAULT_MASK.length]).reverse();
+        const decoded = new TextDecoder().decode(new Uint8Array(raw));
+        const pool = decoded.split(",").map(s => s.trim()).filter(Boolean);
+        if (custom) pool.unshift(custom);
+        return pool;
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function loadVocab() {
+      try {
+        const saved = localStorage.getItem("alt_voice_vocab_v1");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return {
+            mappings: Object.assign({}, DEFAULT_VOCAB.mappings, parsed.mappings || {}),
+            context_hints: parsed.context_hints || DEFAULT_VOCAB.context_hints
+          };
+        }
+      } catch (e) {}
+      return JSON.parse(JSON.stringify(DEFAULT_VOCAB));
+    }
+
+    function saveVocab(vocab) {
+      localStorage.setItem("alt_voice_vocab_v1", JSON.stringify(vocab));
+      renderVocabChips();
+    }
+
+    function renderVocabChips() {
+      const vocab = loadVocab();
+      const entries = Object.entries(vocab.mappings || {});
+      document.getElementById("vocabCountBadge").textContent = entries.length + " 組對照";
+      const container = document.getElementById("vocabChipsContainer");
+      container.innerHTML = "";
+      entries.slice(-14).reverse().forEach(([w, r]) => {
+        const span = document.createElement("span");
+        span.className = "v-chip";
+        span.textContent = `${w} ➔ ${r}`;
+        container.appendChild(span);
+      });
+    }
+
+    function applyVocabularyPostProcessing(text) {
+      const vocab = loadVocab();
+      for (const [wrong, right] of Object.entries(vocab.mappings || {})) {
+        if (/[a-zA-Z]/.test(wrong)) {
+          const escaped = wrong.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const re = new RegExp("\\b" + escaped + "\\b", "gi");
+          text = text.replace(re, right);
+        } else {
+          text = text.split(wrong).join(right);
+        }
+      }
+      return text;
+    }
+
+    function getSystemPrompt() {
+      const vocab = loadVocab();
+      const hintsText = (vocab.context_hints || []).map(h => "   - " + h).join("\n");
+      return `你是一位高階商務與專業技術的文字速記潤飾專家。
+使用者是一位在手機與電腦上進行 AI 代理人開發（AGY/Claude/Codex/Hermes）、程式編修與英語教學的專業工程師與教師。
+使用者剛才透過語音口述了一段話。你的唯一任務是將這段口語音訊轉換為流暢、高品質的繁體中文（台灣習慣）：
+1. 【嚴格清除口語贅字】：徹底刪除所有口頭禪與無意義發語詞（如：呃、額、那個、就是說、然後呢、對啊、嗯、啊等贅詞結巴）。
+2. 【智慧錯字修正常理】：根據上下文自動修正同音錯字（例如將「私藥的發包」修正為「次要的報表/排程」、「AZ」修正為「Alt」等合理用詞）。
+3. 【使用者專屬詞庫與發音校正（最高優先級）】：
+   使用者在說話時常提及特定專有名詞，發音可能受口音影響或被語音模型聽偏。請務必強制校正為正確專業詞彙：
+${hintsText}
+4. 【智慧項目條列排版】：若口述內容包含「多個並列事項、不同任務清單、執行步驟、或同類要點」，請主動排版為清晰條理的項目清單（依語意採用數字編號「1. 2. 3.」或項目符號「•」分行呈現），使其一目了然。
+5. 【結構通順與標點符號】：陳述性敘述請重組為自然分段、標點正確的標準繁體中文。
+6. 【輸出規範鐵則】：直接輸出修飾後的純文字內容，絕對嚴禁任何開場白、不要引號、不要任何「好的」、「這是整理後的內容」等廢話。
+7. 【人聲最大化提取】：請竭盡全力辨識音訊中的人聲語意。即使背景有微弱雜音或微弱電流聲，也請自動過濾雜音並精準還原人聲說話內容。只有在整段音訊完全沒有任何人聲說話時，才回傳 [EMPTY]。`;
+    }
+
+    // =========================================================================
+    // 2. Real-Time WebAudio 16kHz Recorder + 220Hz High-Pass + 1.5s Warning HUD
+    // =========================================================================
+    let isRecording = false;
+    let sessionToken = 0;
+    let audioCtx = null;
+    let mediaStream = null;
+    let scriptProcessor = null;
+    let pcmChunks = [];
+    let recordStartTime = 0;
+    let lastVoiceTime = 0;
+    let hudTimer = null;
+    let animTick = 0;
+    let currentRMS = 0;
+    let noiseFloor = 100;
+    let lastRecognizedSnapshot = "";
+
+    const hudEl = document.getElementById("floatingHud");
+    const micBtn = document.getElementById("micBtn");
+    const micBtnIcon = document.getElementById("micBtnIcon");
+    const micBtnText = document.getElementById("micBtnText");
+    const editorEl = document.getElementById("mainEditor");
+
+    editorEl.addEventListener("input", () => {
+      document.getElementById("charCount").textContent = editorEl.value.length + " 字";
+    });
+
+    function rmsToWave(rms) {
+      const norm = Math.min(1.0, Math.max(0.0, (rms - 180.0) / 1400.0));
+      const bars = [" ", " ", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+      const c = bars[Math.min(8, Math.floor(norm * 8))];
+      const m = bars[Math.min(8, Math.floor(norm * 6))];
+      const o = bars[Math.min(8, Math.floor(norm * 4))];
+      return `${o}${m}${c}${m}${o}`;
+    }
+
+    function setHudState(mode, text) {
+      hudEl.className = "floating-hud";
+      if (mode === "WARN") hudEl.classList.add("warn");
+      else if (mode === "PROCESSING") hudEl.classList.add("processing");
+      else if (mode === "SUCCESS") hudEl.classList.add("success");
+      else if (mode === "CANCEL") hudEl.classList.add("cancel");
+      hudEl.textContent = text;
+    }
+
+    async function toggleRecording() {
+      if (isRecording) {
+        await stopRecordingAndProcess();
+      } else {
+        await startRecording();
+      }
+    }
+
+    async function startRecording() {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1
+          }
+        });
+      } catch (err) {
+        setHudState("CANCEL", "❌ 無法存取麥克風，請允許麥克風權限");
+        return;
+      }
+
+      sessionToken++;
+      isRecording = true;
+      pcmChunks = [];
+      recordStartTime = performance.now();
+      lastVoiceTime = recordStartTime;
+      noiseFloor = 100;
+      currentRMS = 0;
+      animTick = 0;
+
+      if (navigator.vibrate) navigator.vibrate(25);
+      micBtn.classList.add("recording");
+      micBtnIcon.textContent = "⏹️";
+      micBtnText.textContent = "說完點此完成 (Alt)";
+
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AudioContextClass({ sampleRate: 16000 });
+      const source = audioCtx.createMediaStreamSource(mediaStream);
+
+      // 220Hz High-Pass Filter to eliminate mains hum & handling rumble
+      const hpFilter = audioCtx.createBiquadFilter();
+      hpFilter.type = "highpass";
+      hpFilter.frequency.value = 220;
+      hpFilter.Q.value = 0.707;
+
+      scriptProcessor = audioCtx.createScriptProcessor(2048, 1, 1);
+      scriptProcessor.onaudioprocess = (e) => {
+        if (!isRecording) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const int16 = new Int16Array(input.length);
+        let sumSq = 0;
+        for (let i = 0; i < input.length; i++) {
+          const s = Math.max(-1, Math.min(1, input[i]));
+          const v = s < 0 ? s * 32768 : s * 32767;
+          int16[i] = v;
+          sumSq += v * v;
+        }
+        pcmChunks.push(int16);
+        const rms = Math.sqrt(sumSq / input.length);
+        currentRMS = rms;
+
+        if (rms < noiseFloor) {
+          noiseFloor = 0.8 * noiseFloor + 0.2 * rms;
+        } else if (rms < noiseFloor * 1.6 && noiseFloor < 220) {
+          noiseFloor = 0.95 * noiseFloor + 0.05 * rms;
+        }
+        const threshold = Math.max(210, Math.min(450, noiseFloor * 2.4));
+        if (rms > threshold) {
+          lastVoiceTime = performance.now();
+        }
+      };
+
+      source.connect(hpFilter);
+      hpFilter.connect(scriptProcessor);
+      scriptProcessor.connect(audioCtx.destination);
+
+      if (hudTimer) clearInterval(hudTimer);
+      hudTimer = setInterval(() => {
+        if (!isRecording) return;
+        animTick++;
+        const now = performance.now();
+        const elapsedSec = (now - recordStartTime) / 1000;
+        const silenceSec = (now - lastVoiceTime) / 1000;
+        const mins = String(Math.floor(elapsedSec / 60)).padStart(2, "0");
+        const secs = String(Math.floor(elapsedSec % 60)).padStart(2, "0");
+
+        if (elapsedSec >= 1.5 && silenceSec >= 1.5) {
+          const blink = (animTick % 8 < 5) ? "⚠️" : "  ";
+          setHudState("WARN", `${blink} ${mins}:${secs} 聲音太小/聽不清楚！請靠近麥克風`);
+        } else {
+          const wave = rmsToWave(currentRMS);
+          setHudState("RECORDING", `🔴 ${mins}:${secs} 正在聆聽... ${wave}`);
+        }
+      }, 70);
+    }
+
+    function cleanupAudioResources() {
+      if (hudTimer) {
+        clearInterval(hudTimer);
+        hudTimer = null;
+      }
+      if (scriptProcessor) {
+        try { scriptProcessor.disconnect(); } catch (e) {}
+        scriptProcessor = null;
+      }
+      if (audioCtx) {
+        try { audioCtx.close(); } catch (e) {}
+        audioCtx = null;
+      }
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+      }
+      micBtn.classList.remove("recording");
+      micBtnIcon.textContent = "🎤";
+      micBtnText.textContent = "單按開始說話 (Alt)";
+    }
+
+    function cancelSession() {
+      sessionToken++;
+      isRecording = false;
+      cleanupAudioResources();
+      if (navigator.vibrate) navigator.vibrate([30, 40, 30]);
+      setHudState("CANCEL", "🛑 語音輸入已取消");
+    }
+
+    function encodeWAVFromChunks(chunks, sampleRate) {
+      let totalLen = 0;
+      for (const c of chunks) totalLen += c.length;
+      const merged = new Int16Array(totalLen);
+      let offset = 0;
+      let maxPeak = 0;
+      for (const c of chunks) {
+        for (let i = 0; i < c.length; i++) {
+          const absV = Math.abs(c[i]);
+          if (absV > maxPeak) maxPeak = absV;
+        }
+        merged.set(c, offset);
+        offset += c.length;
+      }
+      // Automatic Voice Gain Normalization for quiet speech
+      if (maxPeak >= 220 && maxPeak < 14000) {
+        const gain = Math.min(6.0, 18000.0 / maxPeak);
+        for (let i = 0; i < merged.length; i++) {
+          merged[i] = Math.max(-32768, Math.min(32767, Math.round(merged[i] * gain)));
+        }
+      }
+
+      const buffer = new ArrayBuffer(44 + merged.length * 2);
+      const view = new DataView(buffer);
+      const writeStr = (pos, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(pos + i, str.charCodeAt(i));
+      };
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + merged.length * 2, true);
+      writeStr(8, "WAVE");
+      writeStr(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeStr(36, "data");
+      view.setUint32(40, merged.length * 2, true);
+      for (let i = 0; i < merged.length; i++) {
+        view.setInt16(44 + i * 2, merged[i], true);
+      }
+      return new Uint8Array(buffer);
+    }
+
+    function uint8ToBase64(bytes) {
+      let binary = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      return btoa(binary);
+    }
+
+    async function stopRecordingAndProcess() {
+      const curToken = sessionToken;
+      const elapsedSec = (performance.now() - recordStartTime) / 1000;
+      const actualSampleRate = audioCtx ? audioCtx.sampleRate : 16000;
+      isRecording = false;
+      cleanupAudioResources();
+
+      if (elapsedSec < 0.35 || pcmChunks.length === 0) {
+        setHudState("CANCEL", "⚠️ 說話時間過短");
+        return;
+      }
+
+      const wavBytes = encodeWAVFromChunks(pcmChunks, actualSampleRate);
+      const b64Audio = uint8ToBase64(wavBytes);
+
+      let procStart = performance.now();
+      const spinFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+      let sIdx = 0;
+      hudTimer = setInterval(() => {
+        const dt = ((performance.now() - procStart) / 1000).toFixed(1);
+        setHudState("PROCESSING", `✨ AI 智慧潤飾中 (${dt}s) ${spinFrames[sIdx++ % spinFrames.length]}`);
+      }, 80);
+
+      try {
+        const rawText = await callGeminiMultimodal(b64Audio);
+        if (curToken !== sessionToken) return;
+        clearInterval(hudTimer);
+
+        if (!rawText || rawText === "[EMPTY]" || !rawText.trim()) {
+          setHudState("CANCEL", "⚠️ 未辨識出有效聲音");
+          return;
+        }
+
+        let finalStr = applyVocabularyPostProcessing(rawText.trim());
+        lastRecognizedSnapshot = finalStr;
+
+        if (editorEl.value.trim()) {
+          editorEl.value = editorEl.value.trim() + "\n" + finalStr;
+        } else {
+          editorEl.value = finalStr;
+        }
+        document.getElementById("charCount").textContent = editorEl.value.length + " 字";
+
+        try {
+          if (window.AndroidBridge && window.AndroidBridge.copyText) { window.AndroidBridge.copyText(editorEl.value); } else { await navigator.clipboard.writeText(editorEl.value); }
+          if (navigator.vibrate) navigator.vibrate([20, 50, 20]);
+          setHudState("SUCCESS", "✅ 潤飾完成，已自動複製到剪貼簿！");
+        } catch (e) {
+          setHudState("SUCCESS", "✅ 潤飾完成！請點「複製並學詞」");
+        }
+      } catch (err) {
+        clearInterval(hudTimer);
+        setHudState("CANCEL", "❌ " + (err.message || "AI 服務連線失敗"));
+      }
+    }
+
+    // =========================================================================
+    // 3. Gemini Multimodal & Text Polish + Auto-Learn Vocabulary
+    // =========================================================================
+    async function callGeminiAPI(parts, temp = 0.2) {
+      const keys = unlockVaultKeys();
+      if (!keys.length) throw new Error("尚未設定 API Key");
+
+      let lastErr = null;
+      for (const key of keys) {
+        for (const model of CANDIDATE_MODELS) {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+          try {
+            const res = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{ parts }],
+                generationConfig: { temperature: temp, topP: 0.95 }
+              })
+            });
+            if (!res.ok) {
+              lastErr = new Error("HTTP " + res.status);
+              continue;
+            }
+            const data = await res.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            return text.trim();
+          } catch (e) {
+            lastErr = e;
+          }
+        }
+      }
+      throw lastErr || new Error("連線失敗");
+    }
+
+    async function callGeminiMultimodal(b64Audio) {
+      return await callGeminiAPI([
+        { text: getSystemPrompt() },
+        { inline_data: { mime_type: "audio/wav", data: b64Audio } }
+      ], 0.2);
+    }
+
+    async function checkAndAutoLearnVocab(currentText) {
+      const orig = (lastRecognizedSnapshot || "").trim();
+      const edited = (currentText || "").trim();
+      if (!orig || !edited || orig === edited) return;
+
+      const prompt = `請對照以下兩段文字：
+【原始語音辨識輸出】：
+${orig}
+
+【使用者手動修正後的正確文字】：
+${edited}
+
+請精準萃取出使用者所做的「專用單詞、口語諧音、同音錯字」修正對照。
+規則：
+1. 必須將兩邊相同的周邊文字剝離，只萃取最小單位的核心詞彙（例如萃取 { "半百": "反白", "輪示": "潤飾", "HY": "AGY" }）。
+2. 不要包含整句或相同的前後文。
+3. 嚴格輸出純 JSON 鍵值對（{ "誤聽詞": "正確詞" }），無 Markdown 標記，無其他說明。
+若無任何特定詞彙修正，請回傳 {}。`;
+
+      try {
+        let ans = await callGeminiAPI([{ text: prompt }], 0.1);
+        ans = ans.replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+        const pairs = JSON.parse(ans);
+        const vocab = loadVocab();
+        let learnedList = [];
+        for (const [w, r] of Object.entries(pairs || {})) {
+          const cw = String(w).trim();
+          const cr = String(r).trim();
+          if (cw && cr && cw !== cr && vocab.mappings[cw] !== cr) {
+            vocab.mappings[cw] = cr;
+            learnedList.push(`${cw}➔${cr}`);
+          }
+        }
+        if (learnedList.length > 0) {
+          saveVocab(vocab);
+          lastRecognizedSnapshot = edited;
+          setHudState("SUCCESS", `🧠 已自動記憶新詞：${learnedList.join(", ")}`);
+        }
+      } catch (e) {}
+    }
+
+    async function polishCurrentText() {
+      const fullText = editorEl.value;
+      if (!fullText.trim()) {
+        setHudState("CANCEL", "⚠️ 請先說話或貼上待潤飾文字");
+        return;
+      }
+      await checkAndAutoLearnVocab(fullText);
+
+      const start = editorEl.selectionStart;
+      const end = editorEl.selectionEnd;
+      const hasSel = (end > start);
+      const targetText = hasSel ? fullText.substring(start, end) : fullText;
+
+      setHudState("PROCESSING", "✨ AI 智慧潤飾排版中...");
+      try {
+        const prompt = getSystemPrompt() + "\n\n使用者選取的待潤飾草稿如下：\n```text\n" + targetText + "\n```\n請直接輸出潤飾排版後的繁體中文結果：";
+        const ans = await callGeminiAPI([{ text: prompt }], 0.2);
+        if (ans && ans !== "[EMPTY]") {
+          const polished = applyVocabularyPostProcessing(ans);
+          if (hasSel) {
+            editorEl.value = fullText.substring(0, start) + polished + fullText.substring(end);
+          } else {
+            editorEl.value = polished;
+          }
+          lastRecognizedSnapshot = editorEl.value;
+          document.getElementById("charCount").textContent = editorEl.value.length + " 字";
+          if (window.AndroidBridge && window.AndroidBridge.copyText) { window.AndroidBridge.copyText(editorEl.value); } else { await navigator.clipboard.writeText(editorEl.value); }
+          setHudState("SUCCESS", "✅ 潤飾完成並已複製到剪貼簿！");
+        }
+      } catch (e) {
+        setHudState("CANCEL", "❌ 潤飾失敗：" + e.message);
+      }
+    }
+
+    async function copyAndLearn() {
+      const txt = editorEl.value.trim();
+      if (!txt) {
+        setHudState("CANCEL", "⚠️ 目前沒有可複製的文字");
+        return;
+      }
+      try {
+        if (window.AndroidBridge && window.AndroidBridge.copyText) { window.AndroidBridge.copyText(txt); } else { await navigator.clipboard.writeText(txt); }
+        setHudState("SUCCESS", "📋 已複製到剪貼簿！（背景同步對照學習專屬詞彙中）");
+      } catch (e) {
+        editorEl.select();
+        document.execCommand("copy");
+        setHudState("SUCCESS", "📋 已複製到剪貼簿！");
+      }
+      await checkAndAutoLearnVocab(txt);
+    }
+
+    async function shareText() {
+      const txt = editorEl.value.trim();
+      if (!txt) {
+        setHudState("CANCEL", "⚠️ 目前沒有可分享的文字");
+        return;
+      }
+      await checkAndAutoLearnVocab(txt);
+      if (window.AndroidBridge && window.AndroidBridge.shareText) { window.AndroidBridge.shareText(txt); return; } else if (navigator.share) {
+        try {
+          await navigator.share({ text: txt });
+        } catch (e) {}
+      } else {
+        await copyAndLearn();
+      }
+    }
+
+    function clearEditor() {
+      editorEl.value = "";
+      document.getElementById("charCount").textContent = "0 字";
+      setHudState("IDLE", "🟢 已清空文字區，隨時可開始說話");
+    }
+
+    function showIOSInstallTip(e) {
+      setHudState("PROCESSING", "🍎 請在彈出視窗點「允許」，再到「設定 ➔ 已下載描述檔」安裝，或直接點 Safari 分享「加入主畫面」！");
+    }
+
+    function openSettingsModal() {
+      document.getElementById("customApiKeyInput").value = localStorage.getItem("alt_voice_custom_key") || "";
+      document.getElementById("settingsModal").classList.add("open");
+    }
+    function closeSettingsModal() {
+      document.getElementById("settingsModal").classList.remove("open");
+    }
+    function addManualVocab() {
+      const w = document.getElementById("newWrongWord").value.trim();
+      const r = document.getElementById("newRightWord").value.trim();
+      if (!w || !r) return;
+      const vocab = loadVocab();
+      vocab.mappings[w] = r;
+      saveVocab(vocab);
+      document.getElementById("newWrongWord").value = "";
+      document.getElementById("newRightWord").value = "";
+      setHudState("SUCCESS", `🧠 已新增專屬詞彙：${w} ➔ ${r}`);
+    }
+    function saveSettingsModal() {
+      const k = document.getElementById("customApiKeyInput").value.trim();
+      if (k) localStorage.setItem("alt_voice_custom_key", k);
+      else localStorage.removeItem("alt_voice_custom_key");
+      closeSettingsModal();
+      setHudState("SUCCESS", "✅ 設定已儲存！");
+    }
+
+    // Initialize UI & Service Worker
+    renderVocabChips();
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+    // Support ?autostart=1 for iPhone Action Button / Back Tap Shortcuts
+    if (new URLSearchParams(window.location.search).get("autostart") === "1") {
+      setTimeout(() => startRecording(), 300);
+    }
+  </script>
+</body>
+</html>

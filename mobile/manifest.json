@@ -1,0 +1,25 @@
+{
+  "name": "Alt 智慧語音輸入與潤飾 (iPhone & Android)",
+  "short_name": "Alt 語音輸入",
+  "description": "專為 iPhone 與 Android 打造的極速 AI 語音口述、智慧潤飾與專屬詞庫自動學習 App",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0F111A",
+  "theme_color": "#0F111A",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

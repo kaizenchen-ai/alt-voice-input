@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>FullScreen</key>
+            <true/>
+            <key>Icon</key>
+            <data>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</data>
+            <key>IgnoreManifestScope</key>
+            <false/>
+            <key>IsRemovable</key>
+            <true/>
+            <key>Label</key>
+            <string>Alt 語音輸入</string>
+            <key>PayloadDescription</key>
+            <string>安裝 Alt 智慧語音輸入與潤飾全螢幕 App 至 iPhone 主畫面</string>
+            <key>PayloadDisplayName</key>
+            <string>Alt 智慧語音輸入與潤飾</string>
+            <key>PayloadIdentifier</key>
+            <string>com.teacherkevin.altvoiceinput.webclip</string>
+            <key>PayloadType</key>
+            <string>com.apple.webClip.managed</string>
+            <key>PayloadUUID</key>
+            <string>A1B2C3D4-E5F6-4789-9012-34567890ABCD</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+            <key>PreComposed</key>
+            <true/>
+            <key>URL</key>
+            <string>https://kaizenchen-ai.github.io/alt-voice-input/mobile/</string>
+        </dict>
+    </array>
+    <key>PayloadDescription</key>
+    <string>一鍵將「Alt 智慧語音輸入與潤飾」安裝至 iPhone / iPad 主畫面（全螢幕獨立運行模式）。Created by Teacher Kevin.</string>
+    <key>PayloadDisplayName</key>
+    <string>Alt 智慧語音輸入與潤飾 (iOS 桌面安裝包)</string>
+    <key>PayloadIdentifier</key>
+    <string>com.teacherkevin.altvoiceinput.profile</string>
+    <key>PayloadOrganization</key>
+    <string>Teacher Kevin AI Studio</string>
+    <key>PayloadRemovalDisallowed</key>
+    <false/>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>F9E8D7C6-B5A4-4321-8765-1234567890EF</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>
