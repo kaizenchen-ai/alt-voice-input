@@ -442,6 +442,8 @@ def spawn_ffmpeg(cmd, **kwargs):
     with _ffmpeg_lock:
         if _shutdown.is_set():
             raise RuntimeError("Voice input is shutting down")
+        if "stdin" not in kwargs:
+            kwargs["stdin"] = subprocess.DEVNULL
         proc = subprocess.Popen(cmd, start_new_session=True, **kwargs)
         _ffmpeg_children.add(proc)
         return proc
@@ -488,7 +490,7 @@ class FloatingHUD:
     def __init__(self):
         screen = AppKit.NSScreen.mainScreen()
         frame = screen.frame()
-        self.w, self.h = 400, 52
+        self.w, self.h = 420, 52
         x = (frame.size.width - self.w) / 2
         y = 110  # Bottom-Center: right above the text input box & Dock, directly in line of sight!
 
@@ -517,7 +519,7 @@ class FloatingHUD:
         self.effect_view.layer().setCornerRadius_(26)
         self.effect_view.layer().setMasksToBounds_(True)
         self.effect_view.layer().setBorderWidth_(1.0)
-        self.effect_view.layer().setBorderColor_(AppKit.NSColor.whiteColor().colorWithAlphaComponent_(0.15).CGColor())
+        self.effect_view.layer().setBorderColor_(AppKit.NSColor.whiteColor().colorWithAlphaComponent_(0.2).CGColor())
 
         self.label = AppKit.NSTextField.alloc().initWithFrame_(Foundation.NSMakeRect(10, 12, self.w - 20, 28))
         self.label.setBezeled_(False)
@@ -548,15 +550,17 @@ class FloatingHUD:
         if self.is_unclear != is_unclear:
             self.is_unclear = is_unclear
             if is_unclear:
-                self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.75, 0.2, 1.0))
-                self.effect_view.layer().setBorderColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.6, 0.0, 0.6).CGColor())
+                self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.82, 0.2, 1.0))
+                self.effect_view.layer().setBorderWidth_(2.0)
+                self.effect_view.layer().setBorderColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.65, 0.0, 0.9).CGColor())
             else:
-                self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.35, 0.35, 1.0))
-                self.effect_view.layer().setBorderColor_(AppKit.NSColor.whiteColor().colorWithAlphaComponent_(0.15).CGColor())
+                self.label.setTextColor_(AppKit.NSColor.whiteColor())
+                self.effect_view.layer().setBorderWidth_(1.0)
+                self.effect_view.layer().setBorderColor_(AppKit.NSColor.whiteColor().colorWithAlphaComponent_(0.2).CGColor())
 
     def rms_to_wave(self, rms):
         # Maps voice band RMS amplitude into a lively 5-bar symmetric visualizer
-        norm = min(1.0, max(0.0, (rms - 350) / 1200.0))
+        norm = min(1.0, max(0.0, (rms - 200.0) / 1400.0))
         bar_chars = [' ', ' ', '▂', '▃', '▄', '▅', '▆', '▇', '█']
         c = bar_chars[min(8, int(norm * 8))]
         m = bar_chars[min(8, int(norm * 6))]
@@ -572,8 +576,9 @@ class FloatingHUD:
         self.current_rms = 0.0
         self.is_unclear = False
         self.window.setAlphaValue_(1.0)
-        self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.35, 0.35, 1.0))
-        self.effect_view.layer().setBorderColor_(AppKit.NSColor.whiteColor().colorWithAlphaComponent_(0.15).CGColor())
+        self.label.setTextColor_(AppKit.NSColor.whiteColor())
+        self.effect_view.layer().setBorderWidth_(1.0)
+        self.effect_view.layer().setBorderColor_(AppKit.NSColor.whiteColor().colorWithAlphaComponent_(0.2).CGColor())
         self._update_text()
         self.window.orderFrontRegardless()
         self._start_animation()
@@ -668,8 +673,8 @@ class FloatingHUD:
             elapsed = time.time() - self.record_start_time
             mins, secs = divmod(int(elapsed), 60)
             if self.is_unclear:
-                blink = "⚠️" if (self.anim_idx % 10 < 6) else "  "
-                self.label.setStringValue_(f"{blink} {mins:02d}:{secs:02d} 聲音微弱/聽不清楚！請大聲或重說")
+                blink = "⚠️" if (self.anim_idx % 8 < 5) else "  "
+                self.label.setStringValue_(f"{blink} {mins:02d}:{secs:02d} 聲音太小/聽不清楚！請靠近麥克風")
             else:
                 wave = self.rms_to_wave(self.current_rms) if self.current_rms > 0 else WAVE_FRAMES[self.anim_idx % len(WAVE_FRAMES)]
                 if self.segment_idx > 1:
@@ -730,15 +735,14 @@ class AltVoiceInputManager:
         self.audio_monitor_thread.start()
 
     def _audio_monitor_worker(self, proc):
-        """Reads 16kHz s16le PCM from stdout pipe, monitors 250Hz-3400Hz voice band amplitude, and triggers visual warning if inaudible."""
+        """Reads 16kHz s16le PCM from stdout pipe, monitors voice band amplitude, and triggers visual warning if inaudible."""
         try:
             import numpy as np
         except ImportError:
             return
 
         rec_start = time.time()
-        last_voice_time = time.time()
-        is_warned = False
+        last_voice_time = rec_start
         bytes_per_chunk = 3200  # 0.1 second of 16kHz 16-bit mono
 
         while not self.audio_monitor_stop.is_set() and not _shutdown.is_set():
@@ -752,15 +756,15 @@ class AltVoiceInputManager:
                 rms = float(np.sqrt(np.mean(arr.astype(np.float64)**2)))
 
                 now = time.time()
-                # Consider speech present if voice-band RMS exceeds 580 (distinguishing from room hum ~350-450)
-                if rms > 580.0:
+                # Consider speech present if voice-band RMS exceeds 450 (clean noise floor is ~60-200)
+                if rms > 450.0:
                     last_voice_time = now
 
-                # If after 2.0s of recording, no voice detected for >= 2.0 consecutive seconds -> Warning
+                # If after 1.5s of recording, no voice detected for >= 1.5s -> Trigger Warning
                 elapsed_total = now - rec_start
                 silence_duration = now - last_voice_time
 
-                should_warn = (elapsed_total >= 2.0 and silence_duration >= 2.0)
+                should_warn = (elapsed_total >= 1.5 and silence_duration >= 1.5)
 
                 AppHelper.callAfter(self.hud.update_audio_level, rms, should_warn)
             except Exception:
@@ -787,11 +791,12 @@ class AltVoiceInputManager:
             new_file = f"/tmp/alt_voice_input_{int(time.time() * 1000)}.wav"
             cmd = [
                 FFMPEG_BIN,
+                "-nostdin",
                 "-y",
                 "-loglevel", "error",
                 "-f", "avfoundation",
                 "-i", f":{self.device_idx}",
-                "-filter_complex", "[0:a]asplit=2[out1][out2];[out1]highpass=f=120,lowpass=f=3800[a1];[out2]highpass=f=300,lowpass=f=3400[a2]",
+                "-filter_complex", "[0:a]asplit=2[out1][out2];[out1]adeclick,highpass=f=220:poles=2,afftdn=nf=-25,lowpass=f=3800[a1];[out2]adeclick,highpass=f=260:poles=2,afftdn=nf=-25,lowpass=f=3400[a2]",
                 "-map", "[a1]", "-ar", "16000", "-ac", "1", new_file,
                 "-map", "[a2]", "-ar", "16000", "-ac", "1", "-f", "s16le", "-"
             ]
@@ -1019,11 +1024,12 @@ class AltVoiceInputManager:
 
         cmd = [
             FFMPEG_BIN,
+            "-nostdin",
             "-y",
             "-loglevel", "error",
             "-f", "avfoundation",
             "-i", f":{self.device_idx}",
-            "-filter_complex", "[0:a]asplit=2[out1][out2];[out1]highpass=f=120,lowpass=f=3800[a1];[out2]highpass=f=300,lowpass=f=3400[a2]",
+            "-filter_complex", "[0:a]asplit=2[out1][out2];[out1]adeclick,highpass=f=220:poles=2,afftdn=nf=-25,lowpass=f=3800[a1];[out2]adeclick,highpass=f=260:poles=2,afftdn=nf=-25,lowpass=f=3400[a2]",
             "-map", "[a1]", "-ar", "16000", "-ac", "1", audio_file,
             "-map", "[a2]", "-ar", "16000", "-ac", "1", "-f", "s16le", "-"
         ]
