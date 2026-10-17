@@ -488,7 +488,7 @@ class FloatingHUD:
     def __init__(self):
         screen = AppKit.NSScreen.mainScreen()
         frame = screen.frame()
-        self.w, self.h = 360, 52
+        self.w, self.h = 400, 52
         x = (frame.size.width - self.w) / 2
         y = 110  # Bottom-Center: right above the text input box & Dock, directly in line of sight!
 
@@ -526,7 +526,7 @@ class FloatingHUD:
         self.label.setSelectable_(False)
         self.label.setAlignment_(AppKit.NSTextAlignmentCenter)
         self.label.setTextColor_(AppKit.NSColor.whiteColor())
-        self.label.setFont_(AppKit.NSFont.monospacedDigitSystemFontOfSize_weight_(15, AppKit.NSFontWeightMedium))
+        self.label.setFont_(AppKit.NSFont.monospacedDigitSystemFontOfSize_weight_(14, AppKit.NSFontWeightMedium))
 
         self.effect_view.addSubview_(self.label)
         self.window.contentView().addSubview_(self.effect_view)
@@ -536,15 +536,27 @@ class FloatingHUD:
         self.hud_mode = "IDLE"
         self.generation = 0  # Guard token against stale fade-out timers
         self.current_rms = 0.0  # Real-time microphone audio amplitude
+        self.is_unclear = False  # True when voice signal is too weak / inaudible
         
         # Timing states
         self.record_start_time = 0
         self.segment_idx = 1
         self.proc_start_time = 0
 
+    def update_audio_level(self, rms, is_unclear):
+        self.current_rms = rms
+        if self.is_unclear != is_unclear:
+            self.is_unclear = is_unclear
+            if is_unclear:
+                self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.75, 0.2, 1.0))
+                self.effect_view.layer().setBorderColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.6, 0.0, 0.6).CGColor())
+            else:
+                self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.35, 0.35, 1.0))
+                self.effect_view.layer().setBorderColor_(AppKit.NSColor.whiteColor().colorWithAlphaComponent_(0.15).CGColor())
+
     def rms_to_wave(self, rms):
-        # Maps microphone RMS amplitude into a lively 5-bar symmetric visualizer
-        norm = min(1.0, max(0.0, (rms - 200) / 3800.0))
+        # Maps voice band RMS amplitude into a lively 5-bar symmetric visualizer
+        norm = min(1.0, max(0.0, (rms - 350) / 1200.0))
         bar_chars = [' ', ' ', '▂', '▃', '▄', '▅', '▆', '▇', '█']
         c = bar_chars[min(8, int(norm * 8))]
         m = bar_chars[min(8, int(norm * 6))]
@@ -558,8 +570,10 @@ class FloatingHUD:
         self.segment_idx = seg_idx
         self.anim_idx = 0
         self.current_rms = 0.0
+        self.is_unclear = False
         self.window.setAlphaValue_(1.0)
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.35, 0.35, 1.0))
+        self.effect_view.layer().setBorderColor_(AppKit.NSColor.whiteColor().colorWithAlphaComponent_(0.15).CGColor())
         self._update_text()
         self.window.orderFrontRegardless()
         self._start_animation()
@@ -573,8 +587,10 @@ class FloatingHUD:
         self.proc_start_time = time.time()
         self.anim_idx = 0
         self.current_rms = 0.0
+        self.is_unclear = False
         self.window.setAlphaValue_(1.0)
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(0.4, 0.8, 1.0, 1.0))
+        self.effect_view.layer().setBorderColor_(AppKit.NSColor.whiteColor().colorWithAlphaComponent_(0.15).CGColor())
         self._update_text()
         self.window.orderFrontRegardless()
         self._start_animation()
@@ -584,9 +600,11 @@ class FloatingHUD:
         gen = self.generation
         self.hud_mode = "SUCCESS"
         self.current_rms = 0.0
+        self.is_unclear = False
         self._stop_animation()
         self.window.setAlphaValue_(1.0)
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(0.3, 0.9, 0.45, 1.0))
+        self.effect_view.layer().setBorderColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(0.3, 0.9, 0.45, 0.5).CGColor())
         self.label.setStringValue_(msg)
         self.window.orderFrontRegardless()
         AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
@@ -598,9 +616,11 @@ class FloatingHUD:
         gen = self.generation
         self.hud_mode = "CANCEL"
         self.current_rms = 0.0
+        self.is_unclear = False
         self._stop_animation()
         self.window.setAlphaValue_(1.0)
         self.label.setTextColor_(AppKit.NSColor.colorWithRed_green_blue_alpha_(1.0, 0.7, 0.3, 1.0))
+        self.effect_view.layer().setBorderColor_(AppKit.NSColor.whiteColor().colorWithAlphaComponent_(0.15).CGColor())
         self.label.setStringValue_(msg)
         self.window.orderFrontRegardless()
         AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
@@ -647,11 +667,15 @@ class FloatingHUD:
         if self.hud_mode == "RECORDING":
             elapsed = time.time() - self.record_start_time
             mins, secs = divmod(int(elapsed), 60)
-            wave = WAVE_FRAMES[self.anim_idx % len(WAVE_FRAMES)]
-            if self.segment_idx > 1:
-                self.label.setStringValue_(f"🔴 {mins:02d}:{secs:02d} 正在聆聽 [第{self.segment_idx}段] {wave}")
+            if self.is_unclear:
+                blink = "⚠️" if (self.anim_idx % 10 < 6) else "  "
+                self.label.setStringValue_(f"{blink} {mins:02d}:{secs:02d} 聲音微弱/聽不清楚！請大聲或重說")
             else:
-                self.label.setStringValue_(f"🔴 {mins:02d}:{secs:02d} 正在聆聽... {wave}")
+                wave = self.rms_to_wave(self.current_rms) if self.current_rms > 0 else WAVE_FRAMES[self.anim_idx % len(WAVE_FRAMES)]
+                if self.segment_idx > 1:
+                    self.label.setStringValue_(f"🔴 {mins:02d}:{secs:02d} 正在聆聽 [第{self.segment_idx}段] {wave}")
+                else:
+                    self.label.setStringValue_(f"🔴 {mins:02d}:{secs:02d} 正在聆聽... {wave}")
         elif self.hud_mode == "PROCESSING":
             proc_dt = time.time() - self.proc_start_time
             spin = SPINNER_FRAMES[self.anim_idx % len(SPINNER_FRAMES)]
@@ -689,8 +713,58 @@ class AltVoiceInputManager:
         self.other_key_pressed = False
         self.last_toggle_time = 0
 
+        # Real-time audio stream monitor for voice clarity & live wave
+        self.audio_monitor_thread = None
+        self.audio_monitor_stop = threading.Event()
+
         # Background watchdog for auto-chunking
         threading.Thread(target=self._auto_chunk_watchdog, daemon=True).start()
+
+    def _start_audio_monitor(self, proc):
+        self.audio_monitor_stop.clear()
+        self.audio_monitor_thread = threading.Thread(
+            target=self._audio_monitor_worker,
+            args=(proc,),
+            daemon=True
+        )
+        self.audio_monitor_thread.start()
+
+    def _audio_monitor_worker(self, proc):
+        """Reads 16kHz s16le PCM from stdout pipe, monitors 250Hz-3400Hz voice band amplitude, and triggers visual warning if inaudible."""
+        try:
+            import numpy as np
+        except ImportError:
+            return
+
+        rec_start = time.time()
+        last_voice_time = time.time()
+        is_warned = False
+        bytes_per_chunk = 3200  # 0.1 second of 16kHz 16-bit mono
+
+        while not self.audio_monitor_stop.is_set() and not _shutdown.is_set():
+            try:
+                chunk = proc.stdout.read(bytes_per_chunk)
+                if not chunk:
+                    break
+                arr = np.frombuffer(chunk, dtype=np.int16)
+                if len(arr) == 0:
+                    continue
+                rms = float(np.sqrt(np.mean(arr.astype(np.float64)**2)))
+
+                now = time.time()
+                # Consider speech present if voice-band RMS exceeds 580 (distinguishing from room hum ~350-450)
+                if rms > 580.0:
+                    last_voice_time = now
+
+                # If after 2.0s of recording, no voice detected for >= 2.0 consecutive seconds -> Warning
+                elapsed_total = now - rec_start
+                silence_duration = now - last_voice_time
+
+                should_warn = (elapsed_total >= 2.0 and silence_duration >= 2.0)
+
+                AppHelper.callAfter(self.hud.update_audio_level, rms, should_warn)
+            except Exception:
+                break
 
     def _auto_chunk_watchdog(self):
         """Monitors active recording and auto-slices when reaching AUTO_CHUNK_SECONDS"""
@@ -717,13 +791,14 @@ class AltVoiceInputManager:
                 "-loglevel", "error",
                 "-f", "avfoundation",
                 "-i", f":{self.device_idx}",
-                "-af", "highpass=f=120,lowpass=f=3800",
-                "-ar", "16000",
-                "-ac", "1",
-                new_file
+                "-filter_complex", "[0:a]asplit=2[out1][out2];[out1]highpass=f=120,lowpass=f=3800[a1];[out2]highpass=f=300,lowpass=f=3400[a2]",
+                "-map", "[a1]", "-ar", "16000", "-ac", "1", new_file,
+                "-map", "[a2]", "-ar", "16000", "-ac", "1", "-f", "s16le", "-"
             ]
             try:
-                self.ffmpeg_proc = spawn_ffmpeg(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                self.ffmpeg_proc = spawn_ffmpeg(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                self.audio_monitor_stop.set()
+                self._start_audio_monitor(self.ffmpeg_proc)
             except Exception as e:
                 log(f"Failed to spawn rotated ffmpeg: {e}")
                 return
@@ -801,6 +876,7 @@ class AltVoiceInputManager:
             proc = self.ffmpeg_proc
             audio_file = self.current_recording_path
             self.is_recording = False
+            self.audio_monitor_stop.set()
             self.ffmpeg_proc = None
             self.current_recording_path = None
 
@@ -947,13 +1023,13 @@ class AltVoiceInputManager:
             "-loglevel", "error",
             "-f", "avfoundation",
             "-i", f":{self.device_idx}",
-            "-af", "highpass=f=120,lowpass=f=3800",
-            "-ar", "16000",
-            "-ac", "1",
-            audio_file
+            "-filter_complex", "[0:a]asplit=2[out1][out2];[out1]highpass=f=120,lowpass=f=3800[a1];[out2]highpass=f=300,lowpass=f=3400[a2]",
+            "-map", "[a1]", "-ar", "16000", "-ac", "1", audio_file,
+            "-map", "[a2]", "-ar", "16000", "-ac", "1", "-f", "s16le", "-"
         ]
         try:
-            self.ffmpeg_proc = spawn_ffmpeg(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.ffmpeg_proc = spawn_ffmpeg(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            self._start_audio_monitor(self.ffmpeg_proc)
         except Exception as e:
             log(f"Failed to start ffmpeg: {e}")
             self.is_recording = False
@@ -961,6 +1037,7 @@ class AltVoiceInputManager:
 
     def stop_recording_and_process(self):
         self.is_recording = False
+        self.audio_monitor_stop.set()
         seg_elapsed = time.time() - self.seg_start_time
         total_elapsed = time.time() - self.record_total_start
         proc = self.ffmpeg_proc
